@@ -74,40 +74,42 @@ export default function Home() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {artworks.map((artwork) => (
-              <div key={artwork.id} className="bg-white rounded-lg shadow-lg overflow-hidden hover:shadow-xl transition">
-                {/* Artwork Image */}
-                <img 
-                  src={artwork.image_url} 
-                  alt={artwork.title}
-                  className="w-full h-64 object-cover"
-                />
-                
-                {/* Artwork Info */}
-                <div className="p-4">
-                  <h3 className="font-bold text-lg text-gray-900 mb-1">
-                    {artwork.title}
-                  </h3>
-                  <p className="text-sm text-gray-600 mb-2">
-                    by {artwork.profiles?.username || 'Unknown'}
-                  </p>
-                  {artwork.description && (
-                    <p className="text-sm text-gray-700 line-clamp-2">
-                      {artwork.description}
-                    </p>
-                  )}
+              <Link href={`/artwork/${artwork.id}`} key={artwork.id}>
+                <div className="bg-white rounded-lg shadow-lg overflow-hidden hover:shadow-xl transition cursor-pointer">
+                  {/* Artwork Image */}
+                  <img 
+                    src={artwork.image_url} 
+                    alt={artwork.title}
+                    className="w-full h-64 object-cover"
+                  />
                   
-                  {/* Stats */}
-                  <div className="flex items-center gap-4 mt-3 text-sm text-gray-500">
-                    <span>❤️ {artwork.stroke_count} strokes</span>
-                    <span>💬 {artwork.comment_count} comments</span>
-                    {artwork.mode === 'sketch' && (
-                      <span className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-xs">
-                        WIP
-                      </span>
+                  {/* Artwork Info */}
+                  <div className="p-4">
+                    <h3 className="font-bold text-lg text-gray-900 mb-1">
+                      {artwork.title}
+                    </h3>
+                    <p className="text-sm text-gray-600 mb-2">
+                      by {artwork.profiles?.username || 'Unknown'}
+                    </p>
+                    {artwork.description && (
+                      <p className="text-sm text-gray-700 line-clamp-2">
+                        {artwork.description}
+                      </p>
                     )}
+                    
+                    {/* Stats */}
+                    <div className="flex items-center gap-4 mt-3 text-sm text-gray-500">
+                      <span>❤️ {artwork.stroke_count} strokes</span>
+                      <span>💬 {artwork.comment_count} comments</span>
+                      {artwork.mode === 'sketch' && (
+                        <span className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-xs">
+                          WIP
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
         )}
