@@ -107,7 +107,7 @@ export default function CommunityPage({ params: paramsPromise }) {
       </header>
 
       {/* Community Header */}
-      <div className="bg-gradient-to-r from-purple-500 to-pink-500 text-white">
+      <div className="bg-pink-500 text-white">
         <div className="max-w-7xl mx-auto px-4 py-12">
           <h1 className="text-4xl font-bold mb-2">/n/{community.name}</h1>
           <h2 className="text-2xl mb-2">{community.display_name}</h2>
