@@ -155,8 +155,15 @@ export default function Home() {
                         {artwork.title}
                       </h3>
                       <p className="text-sm text-gray-600 mb-2">
-                        by {artwork.profiles?.username || 'Unknown'}
-                      </p>
+  by{' '}
+  <Link 
+    href={`/profile/${artwork.profiles?.username}`}
+    className="text-pink-500 hover:underline"
+    onClick={(e) => e.stopPropagation()}
+  >
+    {artwork.profiles?.username || 'Unknown'}
+  </Link>
+</p>
                       {artwork.description && (
                         <p className="text-sm text-gray-700 line-clamp-2">
                           {artwork.description}

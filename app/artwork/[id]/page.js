@@ -202,8 +202,14 @@ export default function ArtworkDetailPage({ params: paramsPromise }) {
                 {artwork.title}
               </h1>
               <p className="text-gray-600 mb-4">
-                by {artwork.profiles?.username || 'Unknown'}
-              </p>
+  by{' '}
+  <Link 
+    href={`/profile/${artwork.profiles?.username}`}
+    className="text-pink-500 hover:underline font-medium"
+  >
+    {artwork.profiles?.username || 'Unknown'}
+  </Link>
+</p>
               
               {artwork.description && (
                 <p className="text-gray-700 mb-4">
@@ -256,9 +262,12 @@ export default function ArtworkDetailPage({ params: paramsPromise }) {
                 ) : (
                   comments.map((comment) => (
                     <div key={comment.id} className="border-b pb-4">
-                      <p className="font-medium text-gray-900">
-                        {comment.profiles?.username || 'Unknown'}
-                      </p>
+                      <Link 
+  href={`/profile/${comment.profiles?.username}`}
+  className="font-medium text-gray-900 hover:text-pink-500"
+>
+  {comment.profiles?.username || 'Unknown'}
+</Link>
                       <p className="text-gray-700 text-sm mt-1">
                         {comment.content}
                       </p>

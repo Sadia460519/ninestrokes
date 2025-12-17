@@ -4,52 +4,50 @@ import React, { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 
-export default function CommunityPage({ params: paramsPromise }) {
+export default function ProfilePage({ params: paramsPromise }) {
   const params = React.use(paramsPromise)
-  const [community, setCommunity] = useState(null)
+  const [profile, setProfile] = useState(null)
   const [artworks, setArtworks] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetchCommunity()
+    fetchProfile()
     fetchArtworks()
   }, [])
 
-  async function fetchCommunity() {
+  async function fetchProfile() {
     const { data, error } = await supabase
-      .from('communities')
+      .from('profiles')
       .select('*')
-      .eq('name', params.name)
+      .eq('username', params.username)
       .single()
     
     if (error) {
       console.error('Error:', error)
     } else {
-      setCommunity(data)
+      setProfile(data)
     }
+    setLoading(false)
   }
 
   async function fetchArtworks() {
-    // First get the community ID
-    const { data: communityData } = await supabase
-      .from('communities')
+    // First get the user's ID from their username
+    const { data: profileData } = await supabase
+      .from('profiles')
       .select('id')
-      .eq('name', params.name)
+      .eq('username', params.username)
       .single()
 
-    if (!communityData) {
-      setLoading(false)
-      return
-    }
+    if (!profileData) return
 
-    // Then fetch artworks for this community
+    // Then fetch their artworks
     const { data, error } = await supabase
       .from('artworks')
       .select(`
         *,
         profiles (username)
       `)
-      .eq('community_id', communityData.id)
+      .eq('user_id', profileData.id)
       .order('created_at', { ascending: false })
     
     if (error) {
@@ -57,22 +55,21 @@ export default function CommunityPage({ params: paramsPromise }) {
     } else {
       setArtworks(data)
     }
-    setLoading(false)
   }
 
   if (loading) {
     return (
       <main className="min-h-screen bg-pink-50 p-8">
-        <p>Loading...</p>
+        <p>Loading profile...</p>
       </main>
     )
   }
 
-  if (!community) {
+  if (!profile) {
     return (
       <main className="min-h-screen bg-pink-50 p-8">
         <div className="max-w-7xl mx-auto">
-          <h1 className="text-3xl font-bold text-gray-900">Community not found</h1>
+          <h1 className="text-3xl font-bold text-gray-900">User not found</h1>
           <Link href="/" className="text-pink-500 hover:underline mt-4 block">
             ← Back to home
           </Link>
@@ -106,30 +103,54 @@ export default function CommunityPage({ params: paramsPromise }) {
         </div>
       </header>
 
-      {/* Community Header */}
-      <div className="bg-pink-500 text-white">
-        <div className="max-w-7xl mx-auto px-4 py-12">
-          <h1 className="text-4xl font-bold mb-2">/n/{community.name}</h1>
-          <h2 className="text-2xl mb-2">{community.display_name}</h2>
-          <p className="text-lg opacity-90">{community.description}</p>
-          <div className="mt-4 flex gap-6 text-sm">
-            <span>📊 {artworks.length} artworks</span>
-            <span>👥 {community.member_count} members</span>
+      {/* Profile Header */}
+      <div className="bg-white border-b">
+        <div className="max-w-7xl mx-auto px-4 py-8">
+          <div className="flex items-start gap-6">
+            
+            {/* Avatar */}
+            <div className="w-24 h-24 bg-pink-200 rounded-full flex items-center justify-center text-4xl font-bold text-pink-600">
+              {profile.username.charAt(0).toUpperCase()}
+            </div>
+
+            {/* Profile Info */}
+            <div className="flex-1">
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">
+                {profile.username}
+              </h1>
+              
+              {profile.bio && (
+                <p className="text-gray-700 mb-4">
+                  {profile.bio}
+                </p>
+              )}
+
+              {/* Stats */}
+              <div className="flex gap-6 text-sm">
+                <div>
+                  <span className="font-bold text-gray-900">{artworks.length}</span>
+                  <span className="text-gray-600"> artworks</span>
+                </div>
+                <div>
+                  <span className="font-bold text-gray-900">{profile.total_strokes}</span>
+                  <span className="text-gray-600"> strokes received</span>
+                </div>
+                <div>
+                  <span className="text-gray-600">Joined {new Date(profile.created_at).toLocaleDateString()}</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Artworks Grid */}
       <div className="max-w-7xl mx-auto px-4 py-8">
+        <h2 className="text-2xl font-bold text-gray-900 mb-6">Artworks</h2>
+
         {artworks.length === 0 ? (
           <div className="text-center py-12">
-            <p className="text-gray-600 text-lg mb-4">No artworks in this community yet!</p>
-            <Link 
-              href="/upload"
-              className="text-pink-500 font-medium hover:underline"
-            >
-              Be the first to post →
-            </Link>
+            <p className="text-gray-600 text-lg">No artworks yet!</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -146,25 +167,16 @@ export default function CommunityPage({ params: paramsPromise }) {
                     <h3 className="font-bold text-lg text-gray-900 mb-1">
                       {artwork.title}
                     </h3>
-                    <p className="text-sm text-gray-600 mb-2">
-  by{' '}
-  <Link 
-    href={`/profile/${artwork.profiles?.username}`}
-    className="text-pink-500 hover:underline"
-    onClick={(e) => e.stopPropagation()}
-  >
-    {artwork.profiles?.username || 'Unknown'}
-  </Link>
-</p>
                     
-                    <div className="flex items-center gap-4 mt-3 text-sm text-gray-500">
+                    {artwork.description && (
+                      <p className="text-sm text-gray-700 line-clamp-2 mb-2">
+                        {artwork.description}
+                      </p>
+                    )}
+                    
+                    <div className="flex items-center gap-4 text-sm text-gray-500">
                       <span>❤️ {artwork.stroke_count} strokes</span>
                       <span>💬 {artwork.comment_count} comments</span>
-                      {artwork.mode === 'sketch' && (
-                        <span className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-xs">
-                          WIP
-                        </span>
-                      )}
                     </div>
                   </div>
                 </div>
