@@ -24,6 +24,7 @@ useEffect(() => {
 async function checkAuth() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) {
+    alert('Please log in to upload artwork!')
     router.push('/auth/login')
   }
 }
