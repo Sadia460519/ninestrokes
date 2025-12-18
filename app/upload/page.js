@@ -1,9 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { CldUploadWidget } from 'next-cloudinary'
+
 
 export default function UploadPage() {
   const [title, setTitle] = useState('')
@@ -13,8 +14,20 @@ export default function UploadPage() {
   const [imageUrl, setImageUrl] = useState('')
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState(null)
-  const router = useRouter()
+  
+const router = useRouter()
 
+useEffect(() => {
+  checkAuth()
+}, [])
+
+async function checkAuth() {
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    router.push('/auth/login')
+  }
+}
+  
   const handleUploadSuccess = (result) => {
     setImageUrl(result.info.secure_url)
   }
