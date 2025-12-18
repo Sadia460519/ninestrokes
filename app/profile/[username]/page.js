@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
+import Header from '@/app/components/Header'
 
 export default function ProfilePage({ params: paramsPromise }) {
   const params = React.use(paramsPromise)
@@ -80,28 +81,7 @@ export default function ProfilePage({ params: paramsPromise }) {
 
   return (
     <main className="min-h-screen bg-pink-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-          <Link href="/" className="text-3xl font-bold text-gray-900">
-            NineStrokes
-          </Link>
-          <div className="flex gap-4">
-            <Link 
-              href="/upload"
-              className="bg-pink-500 text-white px-6 py-2 rounded-lg font-medium hover:bg-pink-600"
-            >
-              Upload Art
-            </Link>
-            <Link 
-              href="/auth/login"
-              className="bg-gray-200 text-gray-700 px-6 py-2 rounded-lg font-medium hover:bg-gray-300"
-            >
-              Login
-            </Link>
-          </div>
-        </div>
-      </header>
+      <Header />
 
       {/* Profile Header */}
       <div className="bg-white border-b">

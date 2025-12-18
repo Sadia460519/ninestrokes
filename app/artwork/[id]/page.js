@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import Header from '@/app/components/Header'
 
 export default function ArtworkDetailPage({ params: paramsPromise }) {
   const params = React.use(paramsPromise)
@@ -172,14 +173,12 @@ export default function ArtworkDetailPage({ params: paramsPromise }) {
 
   return (
     <main className="min-h-screen bg-pink-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          <Link href="/" className="text-pink-500 hover:underline">
-            ← Back to Gallery
-          </Link>
-        </div>
-      </header>
+      <Header />
+<div className="max-w-7xl mx-auto px-4 py-4">
+  <Link href="/" className="text-pink-500 hover:underline">
+    ← Back to Gallery
+  </Link>
+</div>
 
       <div className="max-w-6xl mx-auto px-4 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
+import Header from './components/Header'
 
 export default function Home() {
   const [artworks, setArtworks] = useState([])
@@ -56,29 +57,7 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-pink-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900">NineStrokes</h1>
-            <p className="text-gray-600">Where artists thrive 🎨</p>
-          </div>
-          <div className="flex gap-4">
-            <Link 
-              href="/upload"
-              className="bg-pink-500 text-white px-6 py-2 rounded-lg font-medium hover:bg-pink-600"
-            >
-              Upload Art
-            </Link>
-            <Link 
-              href="/auth/login"
-              className="bg-gray-200 text-gray-700 px-6 py-2 rounded-lg font-medium hover:bg-gray-300"
-            >
-              Login
-            </Link>
-          </div>
-        </div>
-      </header>
+      <Header/>
 
       <div className="max-w-7xl mx-auto px-4 py-8 flex gap-6">
         
