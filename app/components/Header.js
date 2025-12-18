@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation'
 export default function Header() {
   const [user, setUser] = useState(null)
   const [profile, setProfile] = useState(null)
+  const [dropdownOpen, setDropdownOpen] = useState(false)
   const router = useRouter()
 
   useEffect(() => {
@@ -22,7 +23,7 @@ export default function Header() {
       // Get user's profile
       const { data } = await supabase
         .from('profiles')
-        .select('username')
+        .select('username, avatar_url')
         .eq('id', user.id)
         .single()
       
@@ -34,6 +35,7 @@ export default function Header() {
     await supabase.auth.signOut()
     setUser(null)
     setProfile(null)
+    setDropdownOpen(false)
     router.push('/')
     router.refresh()
   }
@@ -57,20 +59,42 @@ export default function Header() {
           </Link>
           
           {user ? (
-            <>
-              <Link 
-                href={`/profile/${profile?.username}`}
-                className="text-gray-700 hover:text-pink-500 font-medium"
-              >
-                {profile?.username}
-              </Link>
+            <div className="relative">
+              {/* Profile Picture Button */}
               <button
-                onClick={handleLogout}
-                className="bg-gray-200 text-gray-700 px-6 py-2 rounded-lg font-medium hover:bg-gray-300"
+                onClick={() => setDropdownOpen(!dropdownOpen)}
+                className="w-10 h-10 rounded-full overflow-hidden bg-pink-200 flex items-center justify-center text-lg font-bold text-pink-600 hover:ring-2 hover:ring-pink-500"
               >
-                Logout
+                {profile?.avatar_url ? (
+                  <img 
+                    src={profile.avatar_url} 
+                    alt={profile.username}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  profile?.username?.charAt(0).toUpperCase()
+                )}
               </button>
-            </>
+
+              {/* Dropdown Menu */}
+              {dropdownOpen && (
+                <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50">
+                  <Link 
+                    href={`/profile/${profile?.username}`}
+                    className="block px-4 py-2 text-gray-700 hover:bg-pink-50"
+                    onClick={() => setDropdownOpen(false)}
+                  >
+                    View Profile
+                  </Link>
+                  <button
+                    onClick={handleLogout}
+                    className="block w-full text-left px-4 py-2 text-gray-700 hover:bg-pink-50"
+                  >
+                    Logout
+                  </button>
+                </div>
+              )}
+            </div>
           ) : (
             <Link 
               href="/auth/login"
