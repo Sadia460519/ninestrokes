@@ -5,15 +5,18 @@ import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 import Header from '@/app/components/Header'
 
+
 export default function ProfilePage({ params: paramsPromise }) {
   const params = React.use(paramsPromise)
   const [profile, setProfile] = useState(null)
   const [artworks, setArtworks] = useState([])
   const [loading, setLoading] = useState(true)
+  const [currentUser, setCurrentUser] = useState(null)
 
   useEffect(() => {
     fetchProfile()
     fetchArtworks()
+    checkCurrentUser()
   }, [])
 
   async function fetchProfile() {
@@ -57,6 +60,10 @@ export default function ProfilePage({ params: paramsPromise }) {
       setArtworks(data)
     }
   }
+  async function checkCurrentUser() {
+  const { data: { user } } = await supabase.auth.getUser()
+  setCurrentUser(user)
+}
 
   if (loading) {
     return (
@@ -88,10 +95,19 @@ export default function ProfilePage({ params: paramsPromise }) {
         <div className="max-w-7xl mx-auto px-4 py-8">
           <div className="flex items-start gap-6">
             
+            
             {/* Avatar */}
-            <div className="w-24 h-24 bg-pink-200 rounded-full flex items-center justify-center text-4xl font-bold text-pink-600">
-              {profile.username.charAt(0).toUpperCase()}
-            </div>
+<div className="w-24 h-24 bg-pink-200 rounded-full flex items-center justify-center text-4xl font-bold text-pink-600 overflow-hidden">
+  {profile.avatar_url ? (
+    <img 
+      src={profile.avatar_url} 
+      alt={profile.username}
+      className="w-full h-full object-cover"
+    />
+  ) : (
+    profile.username.charAt(0).toUpperCase()
+  )}
+</div>
 
             {/* Profile Info */}
             <div className="flex-1">
@@ -119,6 +135,15 @@ export default function ProfilePage({ params: paramsPromise }) {
                   <span className="text-gray-600">Joined {new Date(profile.created_at).toLocaleDateString()}</span>
                 </div>
               </div>
+              {/* Edit Profile Button - Only show if viewing your own profile */}
+{currentUser && currentUser.id === profile.id && (
+  <Link 
+    href="/profile/edit"
+    className="mt-4 inline-block bg-pink-500 text-white px-6 py-2 rounded-lg font-medium hover:bg-pink-600"
+  >
+    Edit Profile
+  </Link>
+)}
             </div>
           </div>
         </div>
