@@ -83,22 +83,36 @@ export default function Home() {
             </button>
 
             {/* Communities List */}
-            {sidebarOpen && (
-              <div className="space-y-2">
-                {communities.map((community) => (
-                  <Link 
-                    key={community.id}
-                    href={`/n/${community.name}`}
-                    className="flex items-center gap-2 p-2 rounded-lg hover:bg-pink-50 transition"
-                  >
-                    <span className="text-xl">{communityIcons[community.name] || '🎨'}</span>
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-gray-900">/n/{community.name}</p>
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            )}
+            {/* Communities List */}
+{sidebarOpen && (
+  <div className="space-y-2">
+    {communities.map((community) => (
+      <Link 
+        key={community.id}
+        href={`/n/${community.name}`}
+        className="flex items-center gap-2 p-2 rounded-lg hover:bg-pink-50 transition"
+      >
+        <span className="text-xl">{communityIcons[community.name] || '🎨'}</span>
+        <div className="flex-1">
+          <p className="text-sm font-medium text-gray-900">/n/{community.name}</p>
+        </div>
+      </Link>
+    ))}
+    
+    {/* Pass the Brush - NEW! */}
+    <div className="pt-4 mt-4 border-t border-gray-200">
+      <Link 
+        href="/pass-the-brush"
+        className="flex items-center gap-2 p-2 rounded-lg hover:bg-pink-50 transition bg-pink-100"
+      >
+        <span className="text-xl">🖌️</span>
+        <div className="flex-1">
+          <p className="text-sm font-bold text-pink-600">Pass the Brush</p>
+        </div>
+      </Link>
+    </div>
+  </div>
+)}
           </div>
         </aside>
 
