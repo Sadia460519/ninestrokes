@@ -219,63 +219,90 @@ export default function GameRoom() {
   }
 
   function subscribeToRoom() {
-    // Real-time updates for players joining/leaving
-    const channel = supabase
-      .channel(`room:${roomCode}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'pass_the_brush_players',
-          filter: `room_id=eq.${room?.id}`
-        },
-        () => {
-          fetchRoomData()
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'pass_the_brush_rooms',
-          filter: `id=eq.${room?.id}`
-        },
-        () => {
-          fetchRoomData()
-        }
-      )
-      .subscribe()
+  if (!room) return
 
-    return () => {
-      supabase.removeChannel(channel)
-    }
+  // Real-time updates for players joining/leaving and room status changes
+  const channel = supabase
+    .channel(`room:${roomCode}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'pass_the_brush_players'
+      },
+      (payload) => {
+        console.log('🔄 Player change:', payload)
+        fetchRoomData()
+      }
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'pass_the_brush_rooms',
+        filter: `room_code=eq.${roomCode}`
+      },
+      (payload) => {
+        console.log('🔄 Room update:', payload)
+        fetchRoomData()
+      }
+    )
+    .subscribe()
+
+  return () => {
+    supabase.removeChannel(channel)
+  }
+}
+
+  
+
+    async function startGame() {
+  console.log('🎮 Start Game clicked!')
+  console.log('Is Host:', isHost)
+  console.log('Room:', room)
+  console.log('Players:', players)
+
+  if (!isHost) {
+    console.log('❌ Not host, cannot start')
+    return
   }
 
-  async function startGame() {
-    if (!isHost) return
+  // Check minimum players
+  const activePlayers = players.filter(p => !p.is_spectator)
+  console.log('Active players:', activePlayers.length)
 
-    // Check minimum players
-    if (players.filter(p => !p.is_spectator).length < 2) {
-      setError('Need at least 2 players to start!')
-      return
-    }
-
-    // Choose random topic picker
-    const activePlayers = players.filter(p => !p.is_spectator)
-    const randomPicker = activePlayers[Math.floor(Math.random() * activePlayers.length)]
-
-    // Update room status
-    await supabase
-      .from('pass_the_brush_rooms')
-      .update({
-        status: 'topic_selection',
-        topic_picker_id: randomPicker.user_id,
-        started_at: new Date().toISOString()
-      })
-      .eq('id', room.id)
+  if (activePlayers.length < 2) {
+    setError('Need at least 2 players to start!')
+    console.log('❌ Not enough players')
+    return
   }
+
+  // Choose random topic picker
+  const randomPicker = activePlayers[Math.floor(Math.random() * activePlayers.length)]
+  console.log('🎲 Random picker:', randomPicker)
+
+  // Update room status
+  console.log('📝 Updating room status...')
+  const { data, error } = await supabase
+    .from('pass_the_brush_rooms')
+    .update({
+      status: 'topic_selection',
+      topic_picker_id: randomPicker.user_id,
+      started_at: new Date().toISOString()
+    })
+    .eq('id', room.id)
+
+  console.log('✅ Update result:', { data, error })
+
+  if (error) {
+    console.error('❌ Error updating room:', error)
+    setError('Failed to start game!')
+  } else {
+    console.log('🎉 Game started successfully!')
+  }
+}
 
   if (loading) {
     return (
