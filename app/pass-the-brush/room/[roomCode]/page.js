@@ -181,24 +181,25 @@ const [newComment, setNewComment] = useState('')
   useEffect(() => {
   if (user) {
     fetchRoomData()
-    
-    // Real-time subscription
-    let cleanup
-    if (room) {
-      cleanup = subscribeToRoom()
-    }
-    
-    // Backup polling every 2 seconds (in case realtime doesn't work)
-    const pollInterval = setInterval(() => {
-      fetchRoomData()
-    }, 2000)
-    
-    return () => {
-      if (cleanup) cleanup()
-      clearInterval(pollInterval)
-    }
   }
-}, [user, room?.id])
+}, [user])
+
+useEffect(() => {
+  if (!user || !room) return
+  
+  // Real-time subscription
+  const cleanup = subscribeToRoom()
+  
+  // Backup polling every 2 seconds
+  const pollInterval = setInterval(() => {
+    fetchRoomData()
+  }, 2000)
+  
+  return () => {
+    if (cleanup) cleanup()
+    clearInterval(pollInterval)
+  }
+}, [room?.id])
 
   async function checkUser() {
     const { data: { user } } = await supabase.auth.getUser()
