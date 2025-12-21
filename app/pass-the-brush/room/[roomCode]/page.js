@@ -490,14 +490,237 @@ if (room.status === 'topic_selection') {
   )
 }
 
-// Playing State (we'll build this next)
+// Playing State - Drawing Screen
 if (room.status === 'playing') {
+  // Determine current turn
+  useEffect(() => {
+    if (room && players.length > 0) {
+      // Calculate which player's turn it is based on round and turn count
+      const activePlayers = players.filter(p => !p.is_spectator).sort((a, b) => a.turn_order - b.turn_order)
+      
+      // For now, let's start with first player
+      // TODO: Add proper turn rotation logic
+      const currentPlayer = activePlayers[0]
+      setCurrentTurn(currentPlayer)
+    }
+  }, [room, players])
+
+  // Timer countdown
+  useEffect(() => {
+    if (room.status !== 'playing') return
+
+    const timer = setInterval(() => {
+      setTimeLeft(prev => {
+        if (prev <= 1) {
+          // Time's up - pass to next player
+          // TODO: Implement turn passing
+          return 180
+        }
+        return prev - 1
+      })
+    }, 1000)
+
+    return () => clearInterval(timer)
+  }, [room.status])
+
+  // Fetch comments
+  useEffect(() => {
+    if (room) {
+      fetchComments()
+      subscribeToComments()
+    }
+  }, [room])
+
+  async function fetchComments() {
+    const { data } = await supabase
+      .from('pass_the_brush_comments')
+      .select(`
+        *,
+        profiles(username, avatar_url)
+      `)
+      .eq('room_id', room.id)
+      .order('created_at', { ascending: true })
+
+    if (data) setComments(data)
+  }
+
+  function subscribeToComments() {
+    const channel = supabase
+      .channel(`comments:${room.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'pass_the_brush_comments',
+          filter: `room_id=eq.${room.id}`
+        },
+        () => {
+          fetchComments()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }
+
+  async function handleSendComment() {
+    if (!newComment.trim()) return
+
+    await supabase
+      .from('pass_the_brush_comments')
+      .insert({
+        room_id: room.id,
+        user_id: user.id,
+        comment_text: newComment.trim()
+      })
+
+    setNewComment('')
+  }
+
+  async function handleStrokeAdd(strokeData) {
+    // Save stroke to database
+    // TODO: Implement stroke saving
+    console.log('New stroke:', strokeData)
+  }
+
+  const isMyTurn = currentTurn?.user_id === user.id
+  const activePlayers = players.filter(p => !p.is_spectator)
+
+  // Format time
+  const minutes = Math.floor(timeLeft / 60)
+  const seconds = timeLeft % 60
+
   return (
     <main className="min-h-screen bg-pink-50">
       <Header />
-      <div className="max-w-6xl mx-auto px-4 py-12 text-center">
-        <p className="text-gray-600">Drawing screen coming soon...</p>
-        <p className="text-sm text-gray-500">Topic: {room.topic}</p>
+      
+      <div className="max-w-7xl mx-auto px-4 py-8">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          
+          {/* Left Sidebar - Players */}
+          <div className="lg:col-span-1">
+            <div className="bg-white rounded-lg shadow-lg p-4 sticky top-4">
+              <h3 className="font-bold text-lg mb-4">👥 Players</h3>
+              
+              <div className="space-y-2">
+                {activePlayers.map((player, index) => (
+                  <div
+                    key={player.id}
+                    className={`p-3 rounded-lg ${
+                      player.user_id === currentTurn?.user_id
+                        ? 'bg-pink-100 border-2 border-pink-500'
+                        : 'bg-gray-50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-full bg-pink-200 flex items-center justify-center text-sm font-bold">
+                        {player.profiles?.username?.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">
+                          {player.profiles?.username}
+                        </p>
+                        <p className="text-xs text-gray-500">Turn {index + 1}</p>
+                      </div>
+                      {player.user_id === currentTurn?.user_id && (
+                        <span className="text-pink-500">🖌️</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Round Info */}
+              <div className="mt-4 pt-4 border-t">
+                <p className="text-sm text-gray-600">Round: {room.current_round}</p>
+                <p className="text-sm text-gray-600">Room: {roomCode}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Center - Canvas */}
+          <div className="lg:col-span-2">
+            {/* Turn Indicator */}
+            <div className="bg-white rounded-lg shadow-lg p-4 mb-4">
+              <div className="flex justify-between items-center">
+                <div>
+                  {isMyTurn ? (
+                    <p className="text-xl font-bold text-pink-600">
+                      🎨 Your turn to draw!
+                    </p>
+                  ) : (
+                    <p className="text-xl font-bold text-gray-700">
+                      🎨 {currentTurn?.profiles?.username} is drawing...
+                    </p>
+                  )}
+                </div>
+                
+                {/* Timer */}
+                <div className="text-right">
+                  <p className="text-sm text-gray-500">Time Left</p>
+                  <p className={`text-3xl font-mono font-bold ${
+                    timeLeft < 30 ? 'text-red-500' : 'text-gray-900'
+                  }`}>
+                    {minutes}:{seconds.toString().padStart(2, '0')}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Drawing Canvas */}
+            <DrawingCanvas
+              isMyTurn={isMyTurn}
+              canvasData={canvasData}
+              onStrokeAdd={handleStrokeAdd}
+              room={room}
+            />
+          </div>
+
+          {/* Right Sidebar - Chat */}
+          <div className="lg:col-span-1">
+            <div className="bg-white rounded-lg shadow-lg p-4 sticky top-4 h-[800px] flex flex-col">
+              <h3 className="font-bold text-lg mb-4">💬 Chat</h3>
+              
+              {/* Comments */}
+              <div className="flex-1 overflow-y-auto space-y-3 mb-4">
+                {comments.map((comment) => (
+                  <div key={comment.id} className="text-sm">
+                    <p className="font-medium text-gray-900">
+                      {comment.profiles?.username}
+                    </p>
+                    <p className="text-gray-700">{comment.comment_text}</p>
+                    <p className="text-xs text-gray-400">
+                      {new Date(comment.created_at).toLocaleTimeString()}
+                    </p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Comment Input */}
+              <div className="border-t pt-4">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Type a message..."
+                    value={newComment}
+                    onChange={(e) => setNewComment(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && handleSendComment()}
+                    className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  />
+                  <button
+                    onClick={handleSendComment}
+                    className="bg-pink-500 text-white px-4 py-2 rounded-lg hover:bg-pink-600"
+                  >
+                    Send
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </main>
   )
