@@ -5,6 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { useParams, useRouter } from 'next/navigation'
 import Header from '../../../components/Header'
 import Link from 'next/link'
+import DrawingCanvas from '../../components/DrawingCanvas'
 
 // Topic Picker Component
 function TopicPicker({ room, supabase, roomCode }) {
@@ -166,6 +167,12 @@ export default function GameRoom() {
   const [isHost, setIsHost] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+
+  const [currentTurn, setCurrentTurn] = useState(null)
+const [timeLeft, setTimeLeft] = useState(180) // 3 minutes = 180 seconds
+const [canvasData, setCanvasData] = useState(null)
+const [comments, setComments] = useState([])
+const [newComment, setNewComment] = useState('')
 
   useEffect(() => {
     checkUser()
