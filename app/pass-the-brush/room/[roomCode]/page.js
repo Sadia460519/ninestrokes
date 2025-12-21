@@ -179,9 +179,24 @@ const [newComment, setNewComment] = useState('')
   }, [])
 
   useEffect(() => {
-  if (user && room) {
-    const cleanup = subscribeToRoom()
-    return cleanup
+  if (user) {
+    fetchRoomData()
+    
+    // Real-time subscription
+    let cleanup
+    if (room) {
+      cleanup = subscribeToRoom()
+    }
+    
+    // Backup polling every 2 seconds (in case realtime doesn't work)
+    const pollInterval = setInterval(() => {
+      fetchRoomData()
+    }, 2000)
+    
+    return () => {
+      if (cleanup) cleanup()
+      clearInterval(pollInterval)
+    }
   }
 }, [user, room?.id])
 
