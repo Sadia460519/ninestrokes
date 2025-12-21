@@ -179,11 +179,11 @@ const [newComment, setNewComment] = useState('')
   }, [])
 
   useEffect(() => {
-    if (user) {
-      fetchRoomData()
-      subscribeToRoom()
-    }
-  }, [user])
+  if (user && room) {
+    const cleanup = subscribeToRoom()
+    return cleanup
+  }
+}, [user, room?.id])
 
   async function checkUser() {
     const { data: { user } } = await supabase.auth.getUser()
@@ -228,18 +228,25 @@ const [newComment, setNewComment] = useState('')
   function subscribeToRoom() {
   if (!room) return
 
+  console.log('🔔 Subscribing to room updates:', room.id)
+
   // Real-time updates for players joining/leaving and room status changes
   const channel = supabase
-    .channel(`room:${roomCode}`)
+    .channel(`room:${room.id}`, {
+      config: {
+        broadcast: { self: true }
+      }
+    })
     .on(
       'postgres_changes',
       {
         event: '*',
         schema: 'public',
-        table: 'pass_the_brush_players'
+        table: 'pass_the_brush_players',
+        filter: `room_id=eq.${room.id}`
       },
       (payload) => {
-        console.log('🔄 Player change:', payload)
+        console.log('🔄 Player change detected:', payload)
         fetchRoomData()
       }
     )
@@ -249,16 +256,19 @@ const [newComment, setNewComment] = useState('')
         event: 'UPDATE',
         schema: 'public',
         table: 'pass_the_brush_rooms',
-        filter: `room_code=eq.${roomCode}`
+        filter: `id=eq.${room.id}`
       },
       (payload) => {
-        console.log('🔄 Room update:', payload)
+        console.log('🔄 Room update detected:', payload)
         fetchRoomData()
       }
     )
-    .subscribe()
+    .subscribe((status) => {
+      console.log('📡 Subscription status:', status)
+    })
 
   return () => {
+    console.log('🔕 Unsubscribing from room')
     supabase.removeChannel(channel)
   }
 }
