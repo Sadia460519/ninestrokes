@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import * as fabric from 'fabric'  // ✅ Changed: v6 import
+import * as fabric from 'fabric'
 
 export default function DrawingCanvas({ 
   isMyTurn, 
@@ -22,42 +22,42 @@ export default function DrawingCanvas({
   ]
 
   useEffect(() => {
+    if (!canvasRef.current) return
+
     // Initialize Fabric.js canvas
     const canvas = new fabric.Canvas(canvasRef.current, {
       width: 600,
       height: 800,
       backgroundColor: '#ffffff',
-      isDrawingMode: isMyTurn
+      isDrawingMode: isMyTurn,
+      renderOnAddRemove: true
     })
 
     fabricCanvasRef.current = canvas
 
-    // Set brush (v6 syntax)
+    // Set brush color and width
     if (canvas.freeDrawingBrush) {
       canvas.freeDrawingBrush.color = brushColor
       canvas.freeDrawingBrush.width = brushSize
     }
 
-    // Load existing canvas data
-    if (canvasData) {
-      canvas.loadFromJSON(canvasData, () => {
-        canvas.renderAll()
-      })
-    }
+    // Force render
+    canvas.renderAll()
 
     // Listen for new strokes
     canvas.on('path:created', (e) => {
-      if (isMyTurn && onStrokeAdd) {
-        const path = e.path
+      if (isMyTurn && onStrokeAdd && e.path) {
+        console.log('✏️ Stroke created:', e.path)
         const strokeData = {
           type: 'path',
-          path: path.path,
-          stroke: path.stroke,
-          strokeWidth: path.strokeWidth,
-          fill: path.fill
+          path: e.path.path,
+          stroke: e.path.stroke,
+          strokeWidth: e.path.strokeWidth,
+          fill: e.path.fill
         }
         onStrokeAdd(strokeData)
       }
+      canvas.renderAll()
     })
 
     return () => {
@@ -85,6 +85,7 @@ export default function DrawingCanvas({
     const objects = fabricCanvasRef.current.getObjects()
     if (objects.length > 0) {
       fabricCanvasRef.current.remove(objects[objects.length - 1])
+      fabricCanvasRef.current.renderAll()
     }
   }
 
@@ -97,7 +98,7 @@ export default function DrawingCanvas({
       </div>
 
       {/* Canvas */}
-      <div className="border-4 border-gray-800 rounded-lg overflow-hidden shadow-2xl mb-4">
+      <div className="border-4 border-gray-800 rounded-lg overflow-hidden shadow-2xl mb-4 bg-white">
         <canvas ref={canvasRef} />
       </div>
 

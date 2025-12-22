@@ -194,6 +194,9 @@ export default function GameRoom() {
   useEffect(() => {
     if (room?.status === 'playing' && players.length > 0) {
       const activePlayers = players.filter(p => !p.is_spectator).sort((a, b) => a.turn_order - b.turn_order)
+      
+      // For now, use first player as current turn
+      // TODO: Make this dynamic based on actual turn state
       const currentPlayer = activePlayers[0]
       setCurrentTurn(currentPlayer)
     }
@@ -201,11 +204,13 @@ export default function GameRoom() {
 
   // Timer countdown when playing
   useEffect(() => {
-    if (room?.status !== 'playing') return
+    if (room?.status !== 'playing' || !currentTurn) return
 
     const timer = setInterval(() => {
       setTimeLeft(prev => {
         if (prev <= 1) {
+          // Time's up - pass to next player
+          passToNextPlayer()
           return 180
         }
         return prev - 1
@@ -213,7 +218,7 @@ export default function GameRoom() {
     }, 1000)
 
     return () => clearInterval(timer)
-  }, [room?.status])
+  }, [room?.status, currentTurn])
 
   // Fetch and subscribe to comments when playing
   useEffect(() => {
@@ -265,8 +270,6 @@ export default function GameRoom() {
   function subscribeToRoom() {
     if (!room) return
 
-    console.log('🔔 Subscribing to room updates:', room.id)
-
     const channel = supabase
       .channel(`room:${room.id}`)
       .on(
@@ -277,8 +280,7 @@ export default function GameRoom() {
           table: 'pass_the_brush_players',
           filter: `room_id=eq.${room.id}`
         },
-        (payload) => {
-          console.log('🔄 Player change:', payload)
+        () => {
           fetchRoomData()
         }
       )
@@ -290,8 +292,7 @@ export default function GameRoom() {
           table: 'pass_the_brush_rooms',
           filter: `id=eq.${room.id}`
         },
-        (payload) => {
-          console.log('🔄 Room update:', payload)
+        () => {
           fetchRoomData()
         }
       )
@@ -349,7 +350,7 @@ export default function GameRoom() {
 
     const randomPicker = activePlayers[Math.floor(Math.random() * activePlayers.length)]
 
-    const { error } = await supabase
+    await supabase
       .from('pass_the_brush_rooms')
       .update({
         status: 'topic_selection',
@@ -357,28 +358,57 @@ export default function GameRoom() {
         started_at: new Date().toISOString()
       })
       .eq('id', room.id)
-
-    if (error) {
-      setError('Failed to start game!')
-    }
   }
 
   async function handleSendComment() {
     if (!newComment.trim()) return
 
-    await supabase
+    console.log('💬 Sending comment:', newComment)
+
+    const { data, error } = await supabase
       .from('pass_the_brush_comments')
       .insert({
         room_id: room.id,
         user_id: user.id,
         comment_text: newComment.trim()
       })
+      .select()
+
+    if (error) {
+      console.error('❌ Comment error:', error)
+    } else {
+      console.log('✅ Comment sent:', data)
+    }
 
     setNewComment('')
   }
 
   async function handleStrokeAdd(strokeData) {
     console.log('New stroke:', strokeData)
+  }
+
+  async function passToNextPlayer() {
+    if (!room || !currentTurn) return
+
+    const activePlayers = players.filter(p => !p.is_spectator).sort((a, b) => a.turn_order - b.turn_order)
+    const currentIndex = activePlayers.findIndex(p => p.user_id === currentTurn.user_id)
+    const nextIndex = (currentIndex + 1) % activePlayers.length
+    const nextPlayer = activePlayers[nextIndex]
+
+    console.log('⏭️ Passing turn from', currentTurn.profiles?.username, 'to', nextPlayer.profiles?.username)
+
+    // If we've completed a full round
+    if (nextIndex === 0) {
+      const newRound = room.current_round + 1
+      await supabase
+        .from('pass_the_brush_rooms')
+        .update({ current_round: newRound })
+        .eq('id', room.id)
+    }
+
+    // Update current turn locally
+    setCurrentTurn(nextPlayer)
+    setTimeLeft(180)
   }
 
   if (loading) {
