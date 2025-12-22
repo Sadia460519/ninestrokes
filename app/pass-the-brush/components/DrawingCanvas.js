@@ -22,70 +22,104 @@ export default function DrawingCanvas({
   ]
 
   useEffect(() => {
-    if (!canvasRef.current) return
-
-    // Initialize Fabric.js canvas
-    const canvas = new fabric.Canvas(canvasRef.current, {
-      width: 600,
-      height: 800,
-      backgroundColor: '#ffffff',
-      isDrawingMode: isMyTurn,
-      renderOnAddRemove: true
-    })
-
-    fabricCanvasRef.current = canvas
-
-    // Set brush color and width
-    if (canvas.freeDrawingBrush) {
-      canvas.freeDrawingBrush.color = brushColor
-      canvas.freeDrawingBrush.width = brushSize
+    console.log('🎨 DrawingCanvas useEffect triggered')
+    console.log('🎨 canvasRef.current:', canvasRef.current)
+    console.log('🎨 isMyTurn:', isMyTurn)
+    
+    if (!canvasRef.current) {
+      console.error('❌ canvasRef.current is null!')
+      return
     }
 
-    // Force render
-    canvas.renderAll()
+    console.log('🎨 Attempting to create Fabric canvas...')
 
-    // Listen for new strokes
-    canvas.on('path:created', (e) => {
-      if (isMyTurn && onStrokeAdd && e.path) {
-        console.log('✏️ Stroke created:', e.path)
-        const strokeData = {
-          type: 'path',
-          path: e.path.path,
-          stroke: e.path.stroke,
-          strokeWidth: e.path.strokeWidth,
-          fill: e.path.fill
-        }
-        onStrokeAdd(strokeData)
+    try {
+      // Initialize Fabric.js canvas
+      const canvas = new fabric.Canvas(canvasRef.current, {
+        width: 600,
+        height: 800,
+        backgroundColor: '#ffffff',
+        isDrawingMode: isMyTurn,
+        renderOnAddRemove: true
+      })
+
+      console.log('✅ Fabric canvas created successfully!')
+      console.log('🎨 Canvas object:', canvas)
+
+      fabricCanvasRef.current = canvas
+
+      // Set brush color and width
+      console.log('🎨 Setting up brush...')
+      if (canvas.freeDrawingBrush) {
+        canvas.freeDrawingBrush.color = brushColor
+        canvas.freeDrawingBrush.width = brushSize
+        console.log('✅ Brush configured:', { color: brushColor, width: brushSize })
+      } else {
+        console.error('❌ No freeDrawingBrush found!')
       }
+
+      // Force render
       canvas.renderAll()
-    })
+      console.log('✅ Canvas rendered')
+
+      // Listen for new strokes
+      canvas.on('path:created', (e) => {
+        console.log('✏️ PATH CREATED EVENT FIRED!')
+        if (isMyTurn && onStrokeAdd && e.path) {
+          console.log('✏️ Stroke created:', e.path)
+          const strokeData = {
+            type: 'path',
+            path: e.path.path,
+            stroke: e.path.stroke,
+            strokeWidth: e.path.strokeWidth,
+            fill: e.path.fill
+          }
+          onStrokeAdd(strokeData)
+        }
+        canvas.renderAll()
+      })
+
+      console.log('✅ DrawingCanvas setup complete!')
+
+    } catch (error) {
+      console.error('❌ Error creating Fabric canvas:', error)
+    }
 
     return () => {
-      canvas.dispose()
+      if (fabricCanvasRef.current) {
+        fabricCanvasRef.current.dispose()
+        console.log('🗑️ Canvas disposed')
+      }
     }
   }, [])
 
   // Update drawing mode when turn changes
   useEffect(() => {
+    console.log('🔄 Turn changed. isMyTurn:', isMyTurn)
     if (fabricCanvasRef.current) {
       fabricCanvasRef.current.isDrawingMode = isMyTurn
+      console.log('✅ Drawing mode updated to:', isMyTurn)
     }
   }, [isMyTurn])
 
   // Update brush settings
   useEffect(() => {
+    console.log('🖌️ Brush settings changed:', { color: brushColor, size: brushSize, eraser: isEraser })
     if (fabricCanvasRef.current && fabricCanvasRef.current.freeDrawingBrush) {
       fabricCanvasRef.current.freeDrawingBrush.color = isEraser ? '#ffffff' : brushColor
       fabricCanvasRef.current.freeDrawingBrush.width = brushSize
+      console.log('✅ Brush updated')
     }
   }, [brushColor, brushSize, isEraser])
 
   function handleUndo() {
+    console.log('↶ Undo clicked')
     if (!fabricCanvasRef.current) return
     const objects = fabricCanvasRef.current.getObjects()
     if (objects.length > 0) {
       fabricCanvasRef.current.remove(objects[objects.length - 1])
       fabricCanvasRef.current.renderAll()
+      console.log('✅ Last object removed')
     }
   }
 
@@ -115,6 +149,7 @@ export default function DrawingCanvas({
                   <button
                     key={color}
                     onClick={() => {
+                      console.log('🎨 Color selected:', color)
                       setBrushColor(color)
                       setIsEraser(false)
                     }}
@@ -139,7 +174,11 @@ export default function DrawingCanvas({
                 min="1"
                 max="20"
                 value={brushSize}
-                onChange={(e) => setBrushSize(parseInt(e.target.value))}
+                onChange={(e) => {
+                  const size = parseInt(e.target.value)
+                  console.log('🖌️ Brush size changed:', size)
+                  setBrushSize(size)
+                }}
                 className="w-full"
               />
             </div>
@@ -147,7 +186,10 @@ export default function DrawingCanvas({
             {/* Tools */}
             <div className="flex gap-2">
               <button
-                onClick={() => setIsEraser(!isEraser)}
+                onClick={() => {
+                  console.log('🧹 Eraser toggled:', !isEraser)
+                  setIsEraser(!isEraser)
+                }}
                 className={`flex-1 px-4 py-2 rounded-lg font-medium ${
                   isEraser
                     ? 'bg-pink-500 text-white'
