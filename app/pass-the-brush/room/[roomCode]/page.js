@@ -51,15 +51,29 @@ function TopicPicker({ room, supabase, roomCode }) {
   }
 
   async function selectTopic(topic) {
-    setSelectedTopic(topic)
-    await supabase
-      .from('pass_the_brush_rooms')
-      .update({
-        topic: topic,
-        status: 'playing'
-      })
-      .eq('id', room.id)
+  console.log('📝 Selecting topic:', topic)
+  console.log('📝 Room ID:', room.id)
+  
+  setSelectedTopic(topic)
+  
+  const { data, error } = await supabase
+    .from('pass_the_brush_rooms')
+    .update({
+      topic: topic,
+      status: 'playing'
+    })
+    .eq('id', room.id)
+    .select()
+  
+  console.log('📝 Update result:', { data, error })
+  
+  if (error) {
+    console.error('❌ Failed to update room:', error)
+    alert('Failed to save topic: ' + error.message)
+  } else {
+    console.log('✅ Topic saved successfully!')
   }
+}
 
   async function handleCustomTopic() {
     if (!customTopic.trim()) return
