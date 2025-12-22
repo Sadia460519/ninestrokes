@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { fabric } from 'fabric'
+import * as fabric from 'fabric'  // ✅ Changed: v6 import
 
 export default function DrawingCanvas({ 
   isMyTurn, 
@@ -16,16 +16,9 @@ export default function DrawingCanvas({
   const [isEraser, setIsEraser] = useState(false)
 
   const colors = [
-    '#000000', // Black
-    '#FF0000', // Red
-    '#00FF00', // Green
-    '#0000FF', // Blue
-    '#FFFF00', // Yellow
-    '#FF00FF', // Magenta
-    '#00FFFF', // Cyan
-    '#FFA500', // Orange
-    '#800080', // Purple
-    '#FFFFFF', // White
+    '#000000', '#FF0000', '#00FF00', '#0000FF',
+    '#FFFF00', '#FF00FF', '#00FFFF', '#FFA500',
+    '#800080', '#FFFFFF'
   ]
 
   useEffect(() => {
@@ -39,10 +32,11 @@ export default function DrawingCanvas({
 
     fabricCanvasRef.current = canvas
 
-    // Set brush
-    canvas.freeDrawingBrush = new fabric.PencilBrush(canvas)
-    canvas.freeDrawingBrush.color = brushColor
-    canvas.freeDrawingBrush.width = brushSize
+    // Set brush (v6 syntax)
+    if (canvas.freeDrawingBrush) {
+      canvas.freeDrawingBrush.color = brushColor
+      canvas.freeDrawingBrush.width = brushSize
+    }
 
     // Load existing canvas data
     if (canvasData) {
@@ -92,12 +86,6 @@ export default function DrawingCanvas({
     if (objects.length > 0) {
       fabricCanvasRef.current.remove(objects[objects.length - 1])
     }
-  }
-
-  function handleClear() {
-    if (!fabricCanvasRef.current) return
-    fabricCanvasRef.current.clear()
-    fabricCanvasRef.current.backgroundColor = '#ffffff'
   }
 
   return (
