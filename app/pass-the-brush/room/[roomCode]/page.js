@@ -1,5 +1,6 @@
 'use client';
 
+import DrawingCanvas from '../../components/DrawingCanvas';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '../../../../lib/supabase';
@@ -496,40 +497,44 @@ export default function GameRoom() {
 
   // Send message handler
   const handleSendMessage = async (e) => {
-    e.preventDefault();
-    
-    if (!newMessage.trim()) return;
+  e.preventDefault();
+  
+  if (!newMessage.trim()) return;
 
-    try {
-      debugLog('SendMessage', { message: newMessage.substring(0, 50) });
+  try {
+    debugLog('SendMessage', { message: newMessage.substring(0, 50), roomId: room?.id });
 
-      const player = players.find(p => p.user_id === user?.id);
-      if (!player) {
-        throw new Error('Player not found');
-      }
-
-      const { error } = await supabase
-        .from('pass_the_brush_messages')
-        .insert({
-          room_id: room.id,
-          user_id: user.id,
-          username: player.username,
-          message: newMessage.trim()
-        });
-
-      if (error) {
-        debugLog('SendMessage', { error: 'Insert failed', details: error });
-        throw error;
-      }
-
-      setNewMessage('');
-      debugLog('SendMessage', { action: 'completed' });
-
-    } catch (err) {
-      debugLog('SendMessage', { error: err.message });
-      console.error('Error sending message:', err);
+    const player = players.find(p => p.user_id === user?.id);
+    if (!player) {
+      throw new Error('Player not found');
     }
-  };
+
+    if (!room?.id) {
+      throw new Error('Room ID is missing');
+    }
+
+    const { error } = await supabase
+      .from('pass_the_brush_messages')
+      .insert({
+        room_id: room.id,  // Make sure this is the UUID
+        user_id: user.id,
+        username: player.username || 'Anonymous',
+        message: newMessage.trim()
+      });
+
+    if (error) {
+      debugLog('SendMessage', { error: 'Insert failed', details: error });
+      throw error;
+    }
+
+    setNewMessage('');
+    debugLog('SendMessage', { action: 'completed' });
+
+  } catch (err) {
+    debugLog('SendMessage', { error: err.message });
+    console.error('Error sending message:', err);
+  }
+};
 
   // Leave room handler
   const handleLeaveRoom = async () => {
@@ -698,9 +703,11 @@ export default function GameRoom() {
                       </button>
                     )}
                   </div>
-                  <div className="bg-gray-100 p-8 rounded-lg text-center h-96 flex items-center justify-center">
-  <p className="text-gray-600 text-xl">Canvas coming soon...</p>
-</div>
+                  <DrawingCanvas
+  roomId={room.id}
+  isMyTurn={isMyTurn}
+  onCanvasUpdate={handleCanvasUpdate}
+/>
                 </div>
               </div>
             )}

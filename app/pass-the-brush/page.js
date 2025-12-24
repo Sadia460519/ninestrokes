@@ -43,123 +43,144 @@ export default function PassTheBrushHub() {
   }
 
   async function createRoom() {
-    if (!user) {
-      router.push('/auth/login')
-      return
-    }
-
-    // Generate room code (SUNSET47 style)
-    const words = ['SUNSET', 'OCEAN', 'FOREST', 'MOUNTAIN', 'RIVER', 'DESERT', 'MEADOW', 'VALLEY', 'CANYON', 'ISLAND']
-    const randomWord = words[Math.floor(Math.random() * words.length)]
-    const randomNum = Math.floor(Math.random() * 100).toString().padStart(2, '0')
-    const code = `${randomWord}${randomNum}`
-
-    // Create room in database
-    const { data: room, error } = await supabase
-      .from('pass_the_brush_rooms')
-      .insert({
-        room_code: code,
-        host_id: user.id,
-        status: 'waiting'
-      })
-      .select()
-      .single()
-
-    if (error) {
-      setError('Failed to create room. Try again!')
-      return
-    }
-
-    // Add host as first player
-    await supabase
-      .from('pass_the_brush_players')
-      .insert({
-        room_id: room.id,
-        user_id: user.id,
-        turn_order: 1
-      })
-
-    // Redirect to room
-    router.push(`/pass-the-brush/room/${code}`)
+  if (!user) {
+    router.push('/auth/login')
+    return
   }
+
+  // Generate room code (SUNSET47 style)
+  const words = ['SUNSET', 'OCEAN', 'FOREST', 'MOUNTAIN', 'RIVER', 'DESERT', 'MEADOW', 'VALLEY', 'CANYON', 'ISLAND']
+  const randomWord = words[Math.floor(Math.random() * words.length)]
+  const randomNum = Math.floor(Math.random() * 100).toString().padStart(2, '0')
+  const code = `${randomWord}${randomNum}`
+
+  // Get user's username from profile
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('username')
+    .eq('id', user.id)
+    .single()
+
+  const username = profile?.username || user.email?.split('@')[0] || 'Anonymous'
+
+  // Create room in database
+  const { data: room, error } = await supabase
+    .from('pass_the_brush_rooms')
+    .insert({
+      room_code: code,
+      host_id: user.id,
+      status: 'waiting'
+    })
+    .select()
+    .single()
+
+  if (error) {
+    setError('Failed to create room. Try again!')
+    return
+  }
+
+  // Add host as first player WITH USERNAME
+  await supabase
+    .from('pass_the_brush_players')
+    .insert({
+      room_id: room.id,
+      user_id: user.id,
+      username: username,  // ← ADDED THIS!
+      turn_order: 1
+    })
+
+  // Redirect to room
+  router.push(`/pass-the-brush/room/${code}`)
+}
 
   async function joinRoom() {
-    if (!user) {
-      router.push('/auth/login')
-      return
-    }
+  if (!user) {
+    router.push('/auth/login')
+    return
+  }
 
-    if (!roomCode.trim()) {
-      setError('Please enter a room code!')
-      return
-    }
+  if (!roomCode.trim()) {
+    setError('Please enter a room code!')
+    return
+  }
 
-    // Check if room exists
-    const { data: room, error } = await supabase
-      .from('pass_the_brush_rooms')
+  // Get user's username from profile
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('username')
+    .eq('id', user.id)
+    .single()
+
+  const username = profile?.username || user.email?.split('@')[0] || 'Anonymous'
+
+  // Check if room exists
+  const { data: room, error } = await supabase
+    .from('pass_the_brush_rooms')
+    .select('*')
+    .eq('room_code', roomCode.toUpperCase())
+    .single()
+
+  if (error || !room) {
+    setError('Room not found! Check the code and try again.')
+    return
+  }
+
+  // Check if room is full
+  const { count } = await supabase
+    .from('pass_the_brush_players')
+    .select('*', { count: 'exact', head: true })
+    .eq('room_id', room.id)
+
+  if (count >= 7) {
+    setError('Room is full! (Max 7 players)')
+    return
+  }
+
+  // Check if game already started
+  if (room.status === 'playing' || room.status === 'voting') {
+    // Join as spectator
+    const { data: existingPlayer } = await supabase
+      .from('pass_the_brush_players')
       .select('*')
-      .eq('room_code', roomCode.toUpperCase())
+      .eq('room_id', room.id)
+      .eq('user_id', user.id)
       .single()
 
-    if (error || !room) {
-      setError('Room not found! Check the code and try again.')
-      return
+    if (!existingPlayer) {
+      await supabase
+        .from('pass_the_brush_players')
+        .insert({
+          room_id: room.id,
+          user_id: user.id,
+          username: username,  // ← ADDED THIS!
+          is_spectator: true
+        })
     }
-
-    // Check if room is full
-    const { count } = await supabase
+  } else {
+    // Join as player
+    const { data: existingPlayer } = await supabase
       .from('pass_the_brush_players')
-      .select('*', { count: 'exact', head: true })
+      .select('*')
       .eq('room_id', room.id)
+      .eq('user_id', user.id)
+      .single()
 
-    if (count >= 7) {
-      setError('Room is full! (Max 7 players)')
-      return
-    }
-
-    // Check if game already started
-    if (room.status === 'playing' || room.status === 'voting') {
-      // Join as spectator
-      const { data: existingPlayer } = await supabase
+    if (!existingPlayer) {
+      await supabase
         .from('pass_the_brush_players')
-        .select('*')
-        .eq('room_id', room.id)
-        .eq('user_id', user.id)
-        .single()
-
-      if (!existingPlayer) {
-        await supabase
-          .from('pass_the_brush_players')
-          .insert({
-            room_id: room.id,
-            user_id: user.id,
-            is_spectator: true
-          })
-      }
-    } else {
-      // Join as player
-      const { data: existingPlayer } = await supabase
-        .from('pass_the_brush_players')
-        .select('*')
-        .eq('room_id', room.id)
-        .eq('user_id', user.id)
-        .single()
-
-      if (!existingPlayer) {
-        await supabase
-          .from('pass_the_brush_players')
-          .insert({
-            room_id: room.id,
-            user_id: user.id,
-            turn_order: count + 1,
-            is_spectator: false
-          })
-      }
+        .insert({
+          room_id: room.id,
+          user_id: user.id,
+          username: username,  // ← ADDED THIS!
+          turn_order: count + 1,
+          is_spectator: false
+        })
     }
-
-    // Redirect to room
-    router.push(`/pass-the-brush/room/${roomCode.toUpperCase()}`)
   }
+
+  // Redirect to room
+  router.push(`/pass-the-brush/room/${roomCode.toUpperCase()}`)
+}
 
   if (loading) {
     return (
