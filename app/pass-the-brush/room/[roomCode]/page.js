@@ -5,12 +5,10 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '../../../../lib/supabase';
 
-
 export default function GameRoom() {
   const params = useParams();
   const router = useRouter();
   const roomCode = params.roomCode;
-  
 
   // State management
   const [user, setUser] = useState(null);
@@ -44,13 +42,196 @@ export default function GameRoom() {
     });
   }, [roomCode, user?.id]);
 
+  // Pass turn handler - MOVED UP HERE
+  const handlePassTurn = useCallback(async () => {
+    try {
+      debugLog('PassTurn', { 
+        playersCount: players.length,
+        userId: user?.id
+      });
+
+      const handlePassTurn = useCallback(async () => {
+  try {
+    debugLog('PassTurn', { 
+      action: 'starting',
+      userId: user?.id
+    });
+
+    // FETCH FRESH PLAYER DATA
+    const { data: freshPlayers, error: fetchError } = await supabase
+      .from('pass_the_brush_players')
+      .select('*')
+      .eq('room_id', room.id)
+      .order('turn_order', { ascending: true });
+
+    if (fetchError) throw fetchError;
+
+    const actualCurrentPlayer = freshPlayers.find(p => p.is_current_turn);
+    
+    if (!actualCurrentPlayer) {
+      debugLog('PassTurn', { error: 'No current player found', players: freshPlayers });
+      return;
+    }
+
+    if (actualCurrentPlayer.user_id !== user?.id) {
+      debugLog('PassTurn', { action: 'not my turn, skipping silently' });
+      return;
+    }
+
+    const currentIndex = freshPlayers.findIndex(p => p.is_current_turn);
+    if (currentIndex === -1) {
+      debugLog('PassTurn', { error: 'No current player index found' });
+      return;
+    }
+
+    const nextIndex = (currentIndex + 1) % freshPlayers.length;
+    const nextPlayer = freshPlayers[nextIndex];
+
+    debugLog('PassTurn', { 
+      currentIndex, 
+      nextIndex, 
+      nextPlayer: nextPlayer?.username 
+    });
+
+    const isRoundComplete = nextIndex === 0;
+    const newTurn = isRoundComplete ? currentTurn + 1 : currentTurn;
+    const isGameOver = newTurn > maxTurns;
+
+    if (isGameOver) {
+      debugLog('PassTurn', { action: 'game over', finalTurn: newTurn });
+      
+      await supabase
+        .from('pass_the_brush_rooms')
+        .update({
+          game_state: 'voting',
+          status: 'voting',
+          turn_end_time: null,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', room.id);
+
+      return;
+    }
+
+    // Turn off current player
+    await supabase
+      .from('pass_the_brush_players')
+      .update({ is_current_turn: false })
+      .eq('id', freshPlayers[currentIndex].id);
+
+    // Turn on next player
+    await supabase
+      .from('pass_the_brush_players')
+      .update({ is_current_turn: true })
+      .eq('id', nextPlayer.id);
+
+    const newTurnEndTime = new Date(Date.now() + 60000).toISOString();
+
+    await supabase
+      .from('pass_the_brush_rooms')
+      .update({
+        current_turn: newTurn,
+        turn_end_time: newTurnEndTime,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', room.id);
+
+    debugLog('PassTurn', { 
+      action: 'completed', 
+      newTurn, 
+      nextPlayer: nextPlayer?.username 
+    });
+
+  } catch (err) {
+    debugLog('PassTurn', { error: err.message });
+    console.error('PassTurn error:', err);
+  }
+}, [user, currentTurn, maxTurns, room, debugLog]);
+      
+      if (!actualCurrentPlayer) {
+        debugLog('PassTurn', { error: 'No current player found' });
+        return;
+      }
+
+      if (actualCurrentPlayer.user_id !== user?.id) {
+        debugLog('PassTurn', { action: 'not my turn, skipping silently' });
+        return;
+      }
+
+      const currentIndex = players.findIndex(p => p.is_current_turn);
+      if (currentIndex === -1) {
+        debugLog('PassTurn', { error: 'No current player found' });
+        return;
+      }
+
+      const nextIndex = (currentIndex + 1) % players.length;
+      const nextPlayer = players[nextIndex];
+
+      debugLog('PassTurn', { 
+        currentIndex, 
+        nextIndex, 
+        nextPlayer: nextPlayer?.id 
+      });
+
+      const isRoundComplete = nextIndex === 0;
+      const newTurn = isRoundComplete ? currentTurn + 1 : currentTurn;
+      const isGameOver = newTurn > maxTurns;
+
+      if (isGameOver) {
+        debugLog('PassTurn', { action: 'game over', finalTurn: newTurn });
+        
+        await supabase
+          .from('pass_the_brush_rooms')
+          .update({
+            game_state: 'voting',
+            status: 'voting',
+            turn_end_time: null,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', room.id);
+
+        return;
+      }
+
+      await supabase
+        .from('pass_the_brush_players')
+        .update({ is_current_turn: false })
+        .eq('id', players[currentIndex].id);
+
+      await supabase
+        .from('pass_the_brush_players')
+        .update({ is_current_turn: true })
+        .eq('id', nextPlayer.id);
+
+      const newTurnEndTime = new Date(Date.now() + 60000).toISOString();
+
+      await supabase
+        .from('pass_the_brush_rooms')
+        .update({
+          current_turn: newTurn,
+          turn_end_time: newTurnEndTime,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', room.id);
+
+      debugLog('PassTurn', { 
+        action: 'completed', 
+        newTurn, 
+        nextPlayer: nextPlayer?.username 
+      });
+
+    } catch (err) {
+      debugLog('PassTurn', { error: err.message });
+      console.error('PassTurn error:', err);
+    }
+  }, [players, user, currentTurn, maxTurns, room, debugLog]);
+
   // Initialize user and room
   useEffect(() => {
     const initializeGame = async () => {
       try {
         debugLog('Initialize', { action: 'starting' });
         
-        // Get current user
         const { data: { user: currentUser }, error: userError } = await supabase.auth.getUser();
         
         if (userError) throw userError;
@@ -63,7 +244,6 @@ export default function GameRoom() {
         setUser(currentUser);
         debugLog('Initialize', { user: currentUser.id });
 
-        // Fetch room data
         const { data: roomData, error: roomError } = await supabase
           .from('pass_the_brush_rooms')
           .select('*')
@@ -91,10 +271,7 @@ export default function GameRoom() {
           currentTurn: roomData.current_turn 
         });
 
-        // Fetch players
         await fetchPlayers(roomData.id);
-
-        // Fetch messages
         await fetchMessages(roomData.id);
 
         setLoading(false);
@@ -119,132 +296,20 @@ export default function GameRoom() {
         .from('pass_the_brush_players')
         .select('*')
         .eq('room_id', roomId)
-        .order('joined_at', { ascending: true });
+        .order('turn_order', { ascending: true });
 
       if (error) throw error;
 
       setPlayers(data || []);
       
-      
-      const handlePassTurn = async () => {
-  try {
-    debugLog('PassTurn', { 
-      playersCount: players.length,
-      userId: user?.id,
-      currentPlayerUserId: currentPlayer?.user_id
-    });
-
-    // Find the actual current player from the players array
-    const actualCurrentPlayer = players.find(p => p.is_current_turn);
-    
-    if (!actualCurrentPlayer) {
-      throw new Error('No current player found in players array');
-    }
-
-    if (actualCurrentPlayer.user_id !== user?.id) {
-  debugLog('PassTurn', { action: 'not my turn, skipping silently' });
-  return; // Exit silently instead of throwing error
-}
-
-    // Find current player index
-    const currentIndex = players.findIndex(p => p.is_current_turn);
-    if (currentIndex === -1) {
-      debugLog('PassTurn', { error: 'No current player found' });
-      throw new Error('Could not determine current player');
-    }
-
-    // Calculate next player
-    const nextIndex = (currentIndex + 1) % players.length;
-    const nextPlayer = players[nextIndex];
-
-    debugLog('PassTurn', { 
-      currentIndex, 
-      nextIndex, 
-      nextPlayer: nextPlayer?.id 
-    });
-
-    // Check if round is complete
-    const isRoundComplete = nextIndex === 0;
-    const newTurn = isRoundComplete ? currentTurn + 1 : currentTurn;
-    const isGameOver = newTurn > maxTurns;
-
-    if (isGameOver) {
-      debugLog('PassTurn', { action: 'game over', finalTurn: newTurn });
-      
-      const { error: gameOverError } = await supabase
-        .from('pass_the_brush_rooms')
-        .update({
-          game_state: 'voting',
-          status: 'voting',
-          turn_end_time: null,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', room.id);
-
-      if (gameOverError) throw gameOverError;
-      return;
-    }
-
-    // Update current player turn status
-    const { error: currentPlayerError } = await supabase
-      .from('pass_the_brush_players')
-      .update({ is_current_turn: false })
-      .eq('id', players[currentIndex].id);
-
-    if (currentPlayerError) {
-      debugLog('PassTurn', { error: 'Current player update failed', details: currentPlayerError });
-      throw currentPlayerError;
-    }
-
-    // Update next player turn status
-    const { error: nextPlayerError } = await supabase
-      .from('pass_the_brush_players')
-      .update({ is_current_turn: true })
-      .eq('id', nextPlayer.id);
-
-    if (nextPlayerError) {
-      debugLog('PassTurn', { error: 'Next player update failed', details: nextPlayerError });
-      throw nextPlayerError;
-    }
-
-    // Calculate new turn end time
-    const newTurnEndTime = new Date(Date.now() + 60000).toISOString();
-
-    // Update room
-    const { error: roomUpdateError } = await supabase
-      .from('pass_the_brush_rooms')
-      .update({
-        current_turn: newTurn,
-        turn_end_time: newTurnEndTime,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', room.id);
-
-    if (roomUpdateError) {
-      debugLog('PassTurn', { error: 'Room update failed', details: roomUpdateError });
-      throw roomUpdateError;
-    }
-
-    debugLog('PassTurn', { 
-      action: 'completed', 
-      newTurn, 
-      nextPlayer: nextPlayer?.username 
-    });
-
-  } catch (err) {
-    debugLog('PassTurn', { error: err.message });
-    console.error('PassTurn error:', err); // Just log it, don't alert
-  }
-};
-      
       const current = data?.find(p => p.is_current_turn) || data?.[0];
-setCurrentPlayer(current);
-
-debugLog('FetchPlayers', { 
-  count: data?.length, 
-  currentPlayer: current?.id,  // Now 'current' is defined!
-  players: data?.map(p => ({ id: p.id, username: p.username, isTurn: p.is_current_turn }))
-});
+      setCurrentPlayer(current);
+      
+      debugLog('FetchPlayers', { 
+        count: data?.length, 
+        currentPlayer: current?.id,
+        players: data?.map(p => ({ id: p.id, username: p.username, isTurn: p.is_current_turn }))
+      });
 
     } catch (err) {
       debugLog('FetchPlayers', { error: err.message });
@@ -274,13 +339,12 @@ debugLog('FetchPlayers', {
     }
   };
 
-  // Setup realtime subscriptions
+  // Setup realtime subscriptions - FIXED DEPENDENCIES
   useEffect(() => {
-    if (!room || !user) return;
+    if (!room?.id || !user?.id) return;
 
     debugLog('Realtime', { action: 'setting up subscriptions' });
 
-    // Room updates subscription
     roomChannelRef.current = supabase
       .channel(`room:${room.id}`)
       .on(
@@ -323,7 +387,6 @@ debugLog('FetchPlayers', {
         debugLog('Realtime Room Channel', { status });
       });
 
-    // Messages subscription
     messagesChannelRef.current = supabase
       .channel(`messages:${room.id}`)
       .on(
@@ -352,51 +415,47 @@ debugLog('FetchPlayers', {
         supabase.removeChannel(messagesChannelRef.current);
       }
     };
-  }, [room, user]);
+  }, [room?.id, user?.id]); // FIXED: Only re-subscribe when IDs change
 
-  
-
-// Timer management
-// Timer management
-useEffect(() => {
-  if (!room?.turn_end_time) {
-    setTimeRemaining(null);
-    return;
-  }
-
-  const hasRotatedRef = { current: false }; // Use object to track rotation
-
-  const updateTimer = () => {
-    const endTime = new Date(room.turn_end_time).getTime();
-    const now = Date.now();
-    const remaining = Math.max(0, Math.floor((endTime - now) / 1000));
-    
-    setTimeRemaining(remaining);
-
-    if (remaining === 0 && !hasRotatedRef.current) {
-      hasRotatedRef.current = true;
-      clearInterval(timerRef.current);
-      
-      debugLog('Timer', { action: 'time expired, checking player' });
-      
-      // Auto-rotate turn when timer expires
-      setTimeout(() => {
-        handlePassTurn().catch(err => {
-          debugLog('Timer', { error: 'Auto-rotation failed', details: err.message });
-        });
-      }, 500);
+  // Timer management
+  useEffect(() => {
+    if (!room?.turn_end_time) {
+      setTimeRemaining(null);
+      return;
     }
-  };
 
-  updateTimer();
-  timerRef.current = setInterval(updateTimer, 1000);
+    const hasRotatedRef = { current: false };
 
-  return () => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-    }
-  };
-}, [room?.turn_end_time, players, user]); // Keep dependencies
+    const updateTimer = () => {
+      const endTime = new Date(room.turn_end_time).getTime();
+      const now = Date.now();
+      const remaining = Math.max(0, Math.floor((endTime - now) / 1000));
+      
+      setTimeRemaining(remaining);
+
+      if (remaining === 0 && !hasRotatedRef.current) {
+        hasRotatedRef.current = true;
+        clearInterval(timerRef.current);
+        
+        debugLog('Timer', { action: 'time expired, triggering auto-rotation' });
+        
+        setTimeout(() => {
+          handlePassTurn().catch(err => {
+            debugLog('Timer', { error: 'Auto-rotation failed', details: err.message });
+          });
+        }, 500);
+      }
+    };
+
+    updateTimer();
+    timerRef.current = setInterval(updateTimer, 1000);
+
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+    };
+  }, [room?.turn_end_time, handlePassTurn, debugLog]);
 
   // Generate topic options
   const generateTopicOptions = useCallback(() => {
@@ -431,12 +490,12 @@ useEffect(() => {
       }
 
       if (players.length < 1) {
-  throw new Error('Need at least 1 player to start');
-}
+        throw new Error('Need at least 1 player to start');
+      }
 
-      const topics = generateTopicOptions();
+      generateTopicOptions();
 
-      const { error: updateError } = await supabase
+      await supabase
         .from('pass_the_brush_rooms')
         .update({
           game_state: 'topic_selection',
@@ -446,16 +505,10 @@ useEffect(() => {
         })
         .eq('id', room.id);
 
-      if (updateError) {
-        debugLog('StartGame', { error: 'Update failed', details: updateError });
-        throw updateError;
-      }
-
       debugLog('StartGame', { action: 'completed', newState: 'topic_selection' });
 
     } catch (err) {
       debugLog('StartGame', { error: err.message });
-      console.error(err);
       console.error('StartGame error:', err);
     }
   };
@@ -471,10 +524,9 @@ useEffect(() => {
 
       setSelectedTopic(topic);
 
-      // Calculate turn end time (60 seconds from now)
       const turnEndTime = new Date(Date.now() + 60000).toISOString();
 
-      const { error: updateError } = await supabase
+      await supabase
         .from('pass_the_brush_rooms')
         .update({
           game_state: 'playing',
@@ -486,23 +538,11 @@ useEffect(() => {
         })
         .eq('id', room.id);
 
-      if (updateError) {
-        debugLog('TopicSelect', { error: 'Update failed', details: updateError });
-        throw updateError;
-      }
-
-      // Set first player as current turn
-      const firstPlayer = players[0];
-      if (firstPlayer) {
-        const { error: playerError } = await supabase
-          .from('pass_the_brush_players')
-          .update({ is_current_turn: true })
-          .eq('id', firstPlayer.id);
-
-        if (playerError) {
-          debugLog('TopicSelect', { error: 'Player update failed', details: playerError });
-        }
-      }
+      await supabase
+        .from('pass_the_brush_players')
+        .update({ is_current_turn: true })
+        .eq('room_id', room.id)
+        .eq('turn_order', 1);
 
       debugLog('TopicSelect', { 
         action: 'completed', 
@@ -513,156 +553,45 @@ useEffect(() => {
 
     } catch (err) {
       debugLog('TopicSelect', { error: err.message });
-      console.error(err);
-      console.error('TopicSelect error:', err); // Changed from alert
-    }
-  };
-
-  // Pass turn handler
-  const handlePassTurn = async () => {
-    try {
-      debugLog('PassTurn', { 
-        currentPlayer: currentPlayer?.id, 
-        userId: user?.id,
-        currentTurn 
-      });
-
-      if (currentPlayer?.user_id !== user?.id) {
-        throw new Error('It is not your turn');
-      }
-
-      // Find current player index
-      const currentIndex = players.findIndex(p => p.is_current_turn);
-      if (currentIndex === -1) {
-        debugLog('PassTurn', { error: 'No current player found' });
-        throw new Error('Could not determine current player');
-      }
-
-      // Calculate next player
-      const nextIndex = (currentIndex + 1) % players.length;
-      const nextPlayer = players[nextIndex];
-
-      debugLog('PassTurn', { 
-        currentIndex, 
-        nextIndex, 
-        nextPlayer: nextPlayer?.id 
-      });
-
-      // Check if round is complete
-      const isRoundComplete = nextIndex === 0;
-      const newTurn = isRoundComplete ? currentTurn + 1 : currentTurn;
-      const isGameOver = newTurn > maxTurns;
-
-      if (isGameOver) {
-        debugLog('PassTurn', { action: 'game over', finalTurn: newTurn });
-        
-        const { error: gameOverError } = await supabase
-          .from('pass_the_brush_rooms')
-          .update({
-            game_state: 'voting',
-            status: 'voting',
-            turn_end_time: null,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', room.id);
-
-        if (gameOverError) throw gameOverError;
-        return;
-      }
-
-      // Update current player turn status
-      const { error: currentPlayerError } = await supabase
-        .from('pass_the_brush_players')
-        .update({ is_current_turn: false })
-        .eq('id', players[currentIndex].id);
-
-      if (currentPlayerError) {
-        debugLog('PassTurn', { error: 'Current player update failed', details: currentPlayerError });
-        throw currentPlayerError;
-      }
-
-      // Update next player turn status
-      const { error: nextPlayerError } = await supabase
-        .from('pass_the_brush_players')
-        .update({ is_current_turn: true })
-        .eq('id', nextPlayer.id);
-
-      if (nextPlayerError) {
-        debugLog('PassTurn', { error: 'Next player update failed', details: nextPlayerError });
-        throw nextPlayerError;
-      }
-
-      // Calculate new turn end time
-      const newTurnEndTime = new Date(Date.now() + 60000).toISOString();
-
-      // Update room
-      const { error: roomUpdateError } = await supabase
-        .from('pass_the_brush_rooms')
-        .update({
-          current_turn: newTurn,
-          turn_end_time: newTurnEndTime,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', room.id);
-
-      if (roomUpdateError) {
-        debugLog('PassTurn', { error: 'Room update failed', details: roomUpdateError });
-        throw roomUpdateError;
-      }
-
-      debugLog('PassTurn', { 
-        action: 'completed', 
-        newTurn, 
-        nextPlayer: nextPlayer?.username 
-      });
-
-    } catch (err) {
-      debugLog('PassTurn', { error: err.message });
-      console.error(err);
-      console.error('PassTurn error:', err);
+      console.error('TopicSelect error:', err);
     }
   };
 
   // Send message handler
   const handleSendMessage = async (e) => {
-  e.preventDefault();
-  
-  if (!newMessage.trim()) return;
+    e.preventDefault();
+    
+    if (!newMessage.trim()) return;
 
-  try {
-    debugLog('SendMessage', { message: newMessage.substring(0, 50), roomId: room?.id });
+    try {
+      debugLog('SendMessage', { message: newMessage.substring(0, 50), roomId: room?.id });
 
-    const player = players.find(p => p.user_id === user?.id);
-    if (!player) {
-      throw new Error('Player not found');
+      const player = players.find(p => p.user_id === user?.id);
+      if (!player) {
+        throw new Error('Player not found');
+      }
+
+      if (!room?.id) {
+        throw new Error('Room ID is missing');
+      }
+
+      await supabase
+        .from('pass_the_brush_messages')
+        .insert({
+          room_id: room.id,
+          user_id: user.id,
+          username: player.username || 'Anonymous',
+          message: newMessage.trim()
+        });
+
+      setNewMessage('');
+      debugLog('SendMessage', { action: 'completed' });
+
+    } catch (err) {
+      debugLog('SendMessage', { error: err.message });
+      console.error('Error sending message:', err);
     }
-
-    if (!room?.id) {
-      throw new Error('Room ID is missing');
-    }
-
-    const { error } = await supabase
-      .from('pass_the_brush_messages')
-      .insert({
-        room_id: room.id,  // Make sure this is the UUID
-        user_id: user.id,
-        username: player.username || 'Anonymous',
-        message: newMessage.trim()
-      });
-
-    if (error) {
-      debugLog('SendMessage', { error: 'Insert failed', details: error });
-      throw error;
-    }
-
-    setNewMessage('');
-    debugLog('SendMessage', { action: 'completed' });
-
-  } catch (err) {
-    debugLog('SendMessage', { error: err.message });
-    console.error('Error sending message:', err);
-  }
-};
+  };
 
   // Leave room handler
   const handleLeaveRoom = async () => {
@@ -671,14 +600,10 @@ useEffect(() => {
 
       const player = players.find(p => p.user_id === user?.id);
       if (player) {
-        const { error } = await supabase
+        await supabase
           .from('pass_the_brush_players')
           .delete()
           .eq('id', player.id);
-
-        if (error) {
-          debugLog('LeaveRoom', { error: 'Delete failed', details: error });
-        }
       }
 
       debugLog('LeaveRoom', { action: 'completed' });
@@ -728,8 +653,7 @@ useEffect(() => {
 
   const isHost = room?.host_id === user?.id;
   const currentPlayerData = players.find(p => p.user_id === user?.id);
-const isMyTurn = currentPlayerData?.is_current_turn || false;
-  
+  const isMyTurn = currentPlayerData?.is_current_turn || false;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -774,16 +698,16 @@ const isMyTurn = currentPlayerData?.is_current_turn || false;
                 </p>
                 {isHost ? (
                   <button
-  onClick={handleStartGame}
-  disabled={players.length < 1}
-  className={`px-8 py-3 rounded-lg font-semibold text-lg ${
-    players.length < 1
-      ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-      : 'bg-blue-600 text-white hover:bg-blue-700'
-  }`}
->
-  {players.length < 1 ? 'Need at least 1 player' : 'Start Game'}
-</button>
+                    onClick={handleStartGame}
+                    disabled={players.length < 1}
+                    className={`px-8 py-3 rounded-lg font-semibold text-lg ${
+                      players.length < 1
+                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                    }`}
+                  >
+                    {players.length < 1 ? 'Need at least 1 player' : 'Start Game'}
+                  </button>
                 ) : (
                   <p className="text-gray-500">Waiting for host to start the game...</p>
                 )}
@@ -823,13 +747,12 @@ const isMyTurn = currentPlayerData?.is_current_turn || false;
                         {isMyTurn ? "It's your turn!" : `${currentPlayer?.username}'s turn`}
                       </p>
                     </div>
-                    
                   </div>
                   <DrawingCanvas
-  roomId={room.id}
-  isMyTurn={isMyTurn}
-  onCanvasUpdate={handleCanvasUpdate}
-/>
+                    roomId={room.id}
+                    isMyTurn={isMyTurn}
+                    onCanvasUpdate={handleCanvasUpdate}
+                  />
                 </div>
               </div>
             )}
@@ -860,7 +783,7 @@ const isMyTurn = currentPlayerData?.is_current_turn || false;
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        {index === 0 && <span className="text-yellow-500">👑</span>}
+                        {player.turn_order === 1 && <span className="text-yellow-500">👑</span>}
                         <span className="font-semibold text-gray-900">
                           {player.username}
                         </span>
