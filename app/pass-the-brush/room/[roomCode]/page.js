@@ -42,114 +42,35 @@ export default function GameRoom() {
     });
   }, [roomCode, user?.id]);
 
-  // Pass turn handler - MOVED UP HERE
+  // Pass turn handler - FIXED VERSION WITH FRESH DATA
   const handlePassTurn = useCallback(async () => {
     try {
       debugLog('PassTurn', { 
-        playersCount: players.length,
+        action: 'starting',
         userId: user?.id
       });
 
-      const handlePassTurn = useCallback(async () => {
-  try {
-    debugLog('PassTurn', { 
-      action: 'starting',
-      userId: user?.id
-    });
+      // FETCH FRESH PLAYER DATA FROM DATABASE
+      const { data: freshPlayers, error: fetchError } = await supabase
+        .from('pass_the_brush_players')
+        .select('*')
+        .eq('room_id', room.id)
+        .order('turn_order', { ascending: true });
 
-    // FETCH FRESH PLAYER DATA
-    const { data: freshPlayers, error: fetchError } = await supabase
-      .from('pass_the_brush_players')
-      .select('*')
-      .eq('room_id', room.id)
-      .order('turn_order', { ascending: true });
+      if (fetchError) {
+        debugLog('PassTurn', { error: 'Failed to fetch players', details: fetchError });
+        return;
+      }
 
-    if (fetchError) throw fetchError;
+      debugLog('PassTurn', { 
+        freshPlayersCount: freshPlayers.length,
+        playersWithTurn: freshPlayers.filter(p => p.is_current_turn).map(p => p.username)
+      });
 
-    const actualCurrentPlayer = freshPlayers.find(p => p.is_current_turn);
-    
-    if (!actualCurrentPlayer) {
-      debugLog('PassTurn', { error: 'No current player found', players: freshPlayers });
-      return;
-    }
-
-    if (actualCurrentPlayer.user_id !== user?.id) {
-      debugLog('PassTurn', { action: 'not my turn, skipping silently' });
-      return;
-    }
-
-    const currentIndex = freshPlayers.findIndex(p => p.is_current_turn);
-    if (currentIndex === -1) {
-      debugLog('PassTurn', { error: 'No current player index found' });
-      return;
-    }
-
-    const nextIndex = (currentIndex + 1) % freshPlayers.length;
-    const nextPlayer = freshPlayers[nextIndex];
-
-    debugLog('PassTurn', { 
-      currentIndex, 
-      nextIndex, 
-      nextPlayer: nextPlayer?.username 
-    });
-
-    const isRoundComplete = nextIndex === 0;
-    const newTurn = isRoundComplete ? currentTurn + 1 : currentTurn;
-    const isGameOver = newTurn > maxTurns;
-
-    if (isGameOver) {
-      debugLog('PassTurn', { action: 'game over', finalTurn: newTurn });
-      
-      await supabase
-        .from('pass_the_brush_rooms')
-        .update({
-          game_state: 'voting',
-          status: 'voting',
-          turn_end_time: null,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', room.id);
-
-      return;
-    }
-
-    // Turn off current player
-    await supabase
-      .from('pass_the_brush_players')
-      .update({ is_current_turn: false })
-      .eq('id', freshPlayers[currentIndex].id);
-
-    // Turn on next player
-    await supabase
-      .from('pass_the_brush_players')
-      .update({ is_current_turn: true })
-      .eq('id', nextPlayer.id);
-
-    const newTurnEndTime = new Date(Date.now() + 60000).toISOString();
-
-    await supabase
-      .from('pass_the_brush_rooms')
-      .update({
-        current_turn: newTurn,
-        turn_end_time: newTurnEndTime,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', room.id);
-
-    debugLog('PassTurn', { 
-      action: 'completed', 
-      newTurn, 
-      nextPlayer: nextPlayer?.username 
-    });
-
-  } catch (err) {
-    debugLog('PassTurn', { error: err.message });
-    console.error('PassTurn error:', err);
-  }
-}, [user, currentTurn, maxTurns, room, debugLog]);
+      const actualCurrentPlayer = freshPlayers.find(p => p.is_current_turn);
       
       if (!actualCurrentPlayer) {
-        debugLog('PassTurn', { error: 'No current player found' });
+        debugLog('PassTurn', { error: 'No current player found', players: freshPlayers.map(p => ({ username: p.username, isTurn: p.is_current_turn })) });
         return;
       }
 
@@ -158,19 +79,15 @@ export default function GameRoom() {
         return;
       }
 
-      const currentIndex = players.findIndex(p => p.is_current_turn);
-      if (currentIndex === -1) {
-        debugLog('PassTurn', { error: 'No current player found' });
-        return;
-      }
-
-      const nextIndex = (currentIndex + 1) % players.length;
-      const nextPlayer = players[nextIndex];
+      const currentIndex = freshPlayers.findIndex(p => p.is_current_turn);
+      const nextIndex = (currentIndex + 1) % freshPlayers.length;
+      const nextPlayer = freshPlayers[nextIndex];
 
       debugLog('PassTurn', { 
+        currentPlayer: actualCurrentPlayer.username,
+        nextPlayer: nextPlayer.username,
         currentIndex, 
-        nextIndex, 
-        nextPlayer: nextPlayer?.id 
+        nextIndex
       });
 
       const isRoundComplete = nextIndex === 0;
@@ -193,15 +110,21 @@ export default function GameRoom() {
         return;
       }
 
+      // Turn off current player
       await supabase
         .from('pass_the_brush_players')
         .update({ is_current_turn: false })
-        .eq('id', players[currentIndex].id);
+        .eq('id', freshPlayers[currentIndex].id);
 
+      debugLog('PassTurn', { action: 'turned off current player', player: actualCurrentPlayer.username });
+
+      // Turn on next player
       await supabase
         .from('pass_the_brush_players')
         .update({ is_current_turn: true })
         .eq('id', nextPlayer.id);
+
+      debugLog('PassTurn', { action: 'turned on next player', player: nextPlayer.username });
 
       const newTurnEndTime = new Date(Date.now() + 60000).toISOString();
 
@@ -215,16 +138,16 @@ export default function GameRoom() {
         .eq('id', room.id);
 
       debugLog('PassTurn', { 
-        action: 'completed', 
+        action: 'completed successfully', 
         newTurn, 
-        nextPlayer: nextPlayer?.username 
+        nextPlayer: nextPlayer.username 
       });
 
     } catch (err) {
-      debugLog('PassTurn', { error: err.message });
+      debugLog('PassTurn', { error: err.message, stack: err.stack });
       console.error('PassTurn error:', err);
     }
-  }, [players, user, currentTurn, maxTurns, room, debugLog]);
+  }, [user, currentTurn, maxTurns, room, debugLog]);
 
   // Initialize user and room
   useEffect(() => {
@@ -339,7 +262,7 @@ export default function GameRoom() {
     }
   };
 
-  // Setup realtime subscriptions - FIXED DEPENDENCIES
+  // Setup realtime subscriptions
   useEffect(() => {
     if (!room?.id || !user?.id) return;
 
@@ -415,7 +338,7 @@ export default function GameRoom() {
         supabase.removeChannel(messagesChannelRef.current);
       }
     };
-  }, [room?.id, user?.id]); // FIXED: Only re-subscribe when IDs change
+  }, [room?.id, user?.id]);
 
   // Timer management
   useEffect(() => {
@@ -772,7 +695,7 @@ export default function GameRoom() {
             <div className="bg-white rounded-lg shadow-md p-6">
               <h3 className="text-lg font-bold text-gray-900 mb-4">Players ({players.length})</h3>
               <div className="space-y-2">
-                {players.map((player, index) => (
+                {players.map((player) => (
                   <div
                     key={player.id}
                     className={`p-3 rounded-lg ${
