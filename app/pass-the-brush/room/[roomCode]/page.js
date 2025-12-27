@@ -27,38 +27,67 @@ export default function GameRoom() {
   const [timeRemaining, setTimeRemaining] = useState(null);
   const [canvasData, setCanvasData] = useState(null);
 
-  // Refs for realtime subscriptions
+  // Refs for realtime subscriptions and stable references
   const roomChannelRef = useRef(null);
   const messagesChannelRef = useRef(null);
   const timerRef = useRef(null);
+  const roomIdRef = useRef(null); // Stable reference to room.id
+  const isRotatingRef = useRef(false); // Prevent double rotation
+
+  // Keep roomIdRef in sync
+  useEffect(() => {
+    if (room?.id) {
+      roomIdRef.current = room.id;
+    }
+  }, [room?.id]);
 
   // Debug logging helper
   const debugLog = useCallback((context, data) => {
     console.log(`[PassTheBrush Debug - ${context}]:`, {
       timestamp: new Date().toISOString(),
       roomCode,
-      userId: user?.id,
+      visibleUserId: user?.id?.substring(0, 8),
       ...data
     });
   }, [roomCode, user?.id]);
 
-  // Pass turn handler - FIXED VERSION WITH FRESH DATA
+  // Pass turn handler - FIXED VERSION WITH FRESH DATA AND ROTATION LOCK
   const handlePassTurn = useCallback(async () => {
+    // Prevent multiple simultaneous rotation attempts
+    if (isRotatingRef.current) {
+      debugLog('PassTurn', { action: 'already rotating, skipping' });
+      return;
+    }
+
+    const currentRoomId = roomIdRef.current;
+    if (!currentRoomId) {
+      debugLog('PassTurn', { error: 'No room ID available' });
+      return;
+    }
+
     try {
+      isRotatingRef.current = true;
+      
       debugLog('PassTurn', { 
         action: 'starting',
-        userId: user?.id
+        visibleUserId: user?.id?.substring(0, 8),
+        roomId: currentRoomId
       });
 
       // FETCH FRESH PLAYER DATA FROM DATABASE
       const { data: freshPlayers, error: fetchError } = await supabase
         .from('pass_the_brush_players')
         .select('*')
-        .eq('room_id', room.id)
+        .eq('room_id', currentRoomId)
         .order('turn_order', { ascending: true });
 
       if (fetchError) {
         debugLog('PassTurn', { error: 'Failed to fetch players', details: fetchError });
+        return;
+      }
+
+      if (!freshPlayers || freshPlayers.length === 0) {
+        debugLog('PassTurn', { error: 'No players found' });
         return;
       }
 
@@ -70,14 +99,37 @@ export default function GameRoom() {
       const actualCurrentPlayer = freshPlayers.find(p => p.is_current_turn);
       
       if (!actualCurrentPlayer) {
-        debugLog('PassTurn', { error: 'No current player found', players: freshPlayers.map(p => ({ username: p.username, isTurn: p.is_current_turn })) });
+        debugLog('PassTurn', { 
+          error: 'No current player found in database', 
+          players: freshPlayers.map(p => ({ username: p.username, isTurn: p.is_current_turn })) 
+        });
         return;
       }
 
+      // CRITICAL: Only the current player should rotate turns
       if (actualCurrentPlayer.user_id !== user?.id) {
-        debugLog('PassTurn', { action: 'not my turn, skipping silently' });
+        debugLog('PassTurn', { 
+          action: 'not my turn according to fresh data, skipping',
+          currentPlayerUsername: actualCurrentPlayer.username,
+          myUserId: user?.id?.substring(0, 8)
+        });
         return;
       }
+
+      // Fetch fresh room data for current_turn
+      const { data: freshRoom, error: roomFetchError } = await supabase
+        .from('pass_the_brush_rooms')
+        .select('*')
+        .eq('id', currentRoomId)
+        .single();
+
+      if (roomFetchError || !freshRoom) {
+        debugLog('PassTurn', { error: 'Failed to fetch room', details: roomFetchError });
+        return;
+      }
+
+      const freshCurrentTurn = freshRoom.current_turn || 1;
+      const freshMaxTurns = freshRoom.max_turns || 3;
 
       const currentIndex = freshPlayers.findIndex(p => p.is_current_turn);
       const nextIndex = (currentIndex + 1) % freshPlayers.length;
@@ -87,16 +139,25 @@ export default function GameRoom() {
         currentPlayer: actualCurrentPlayer.username,
         nextPlayer: nextPlayer.username,
         currentIndex, 
-        nextIndex
+        nextIndex,
+        freshCurrentTurn,
+        freshMaxTurns
       });
 
       const isRoundComplete = nextIndex === 0;
-      const newTurn = isRoundComplete ? currentTurn + 1 : currentTurn;
-      const isGameOver = newTurn > maxTurns;
+      const newTurn = isRoundComplete ? freshCurrentTurn + 1 : freshCurrentTurn;
+      const isGameOver = newTurn > freshMaxTurns;
 
       if (isGameOver) {
         debugLog('PassTurn', { action: 'game over', finalTurn: newTurn });
         
+        // First turn off current player
+        await supabase
+          .from('pass_the_brush_players')
+          .update({ is_current_turn: false })
+          .eq('id', actualCurrentPlayer.id);
+
+        // Then update room to voting state
         await supabase
           .from('pass_the_brush_rooms')
           .update({
@@ -105,49 +166,78 @@ export default function GameRoom() {
             turn_end_time: null,
             updated_at: new Date().toISOString()
           })
-          .eq('id', room.id);
+          .eq('id', currentRoomId);
 
+        debugLog('PassTurn', { action: 'game ended, moved to voting' });
         return;
       }
 
-      // Turn off current player
-      await supabase
+      // Use a transaction-like approach: update both players in sequence
+      // Turn off current player first
+      const { error: turnOffError } = await supabase
         .from('pass_the_brush_players')
         .update({ is_current_turn: false })
-        .eq('id', freshPlayers[currentIndex].id);
+        .eq('id', actualCurrentPlayer.id);
+
+      if (turnOffError) {
+        debugLog('PassTurn', { error: 'Failed to turn off current player', details: turnOffError });
+        return;
+      }
 
       debugLog('PassTurn', { action: 'turned off current player', player: actualCurrentPlayer.username });
 
       // Turn on next player
-      await supabase
+      const { error: turnOnError } = await supabase
         .from('pass_the_brush_players')
         .update({ is_current_turn: true })
         .eq('id', nextPlayer.id);
 
+      if (turnOnError) {
+        debugLog('PassTurn', { error: 'Failed to turn on next player', details: turnOnError });
+        // Try to recover by turning current player back on
+        await supabase
+          .from('pass_the_brush_players')
+          .update({ is_current_turn: true })
+          .eq('id', actualCurrentPlayer.id);
+        return;
+      }
+
       debugLog('PassTurn', { action: 'turned on next player', player: nextPlayer.username });
 
+      // Update room with new turn info
       const newTurnEndTime = new Date(Date.now() + 60000).toISOString();
 
-      await supabase
+      const { error: roomUpdateError } = await supabase
         .from('pass_the_brush_rooms')
         .update({
           current_turn: newTurn,
           turn_end_time: newTurnEndTime,
           updated_at: new Date().toISOString()
         })
-        .eq('id', room.id);
+        .eq('id', currentRoomId);
+
+      if (roomUpdateError) {
+        debugLog('PassTurn', { error: 'Failed to update room', details: roomUpdateError });
+        return;
+      }
 
       debugLog('PassTurn', { 
         action: 'completed successfully', 
         newTurn, 
-        nextPlayer: nextPlayer.username 
+        nextPlayer: nextPlayer.username,
+        newTurnEndTime
       });
 
     } catch (err) {
       debugLog('PassTurn', { error: err.message, stack: err.stack });
       console.error('PassTurn error:', err);
+    } finally {
+      // Reset rotation lock after a short delay to prevent rapid re-triggers
+      setTimeout(() => {
+        isRotatingRef.current = false;
+      }, 1000);
     }
-  }, [user, currentTurn, maxTurns, room, debugLog]);
+  }, [user?.id, debugLog]);
 
   // Initialize user and room
   useEffect(() => {
@@ -165,7 +255,7 @@ export default function GameRoom() {
         }
 
         setUser(currentUser);
-        debugLog('Initialize', { user: currentUser.id });
+        debugLog('Initialize', { visibleUserId: currentUser.id.substring(0, 8) });
 
         const { data: roomData, error: roomError } = await supabase
           .from('pass_the_brush_rooms')
@@ -184,12 +274,13 @@ export default function GameRoom() {
         }
 
         setRoom(roomData);
+        roomIdRef.current = roomData.id;
         setGameState(roomData.game_state || roomData.status || 'waiting');
         setCurrentTurn(roomData.current_turn || 1);
         setMaxTurns(roomData.max_turns || 3);
         
         debugLog('Initialize', { 
-          room: roomData.id, 
+          roomId: roomData.id, 
           gameState: roomData.game_state || roomData.status,
           currentTurn: roomData.current_turn 
         });
@@ -208,7 +299,7 @@ export default function GameRoom() {
     };
 
     initializeGame();
-  }, [roomCode]);
+  }, [roomCode, router, debugLog]);
 
   // Fetch players
   const fetchPlayers = async (roomId) => {
@@ -230,8 +321,8 @@ export default function GameRoom() {
       
       debugLog('FetchPlayers', { 
         count: data?.length, 
-        currentPlayer: current?.id,
-        players: data?.map(p => ({ id: p.id, username: p.username, isTurn: p.is_current_turn }))
+        currentPlayerUsername: current?.username,
+        players: data?.map(p => ({ username: p.username, isTurn: p.is_current_turn }))
       });
 
     } catch (err) {
@@ -301,8 +392,11 @@ export default function GameRoom() {
           table: 'pass_the_brush_players',
           filter: `room_id=eq.${room.id}`
         },
-        () => {
-          debugLog('Realtime Player Update', { action: 'refetching players' });
+        (payload) => {
+          debugLog('Realtime Player Update', { 
+            action: 'refetching players',
+            event: payload.eventType
+          });
           fetchPlayers(room.id);
         }
       )
@@ -338,16 +432,33 @@ export default function GameRoom() {
         supabase.removeChannel(messagesChannelRef.current);
       }
     };
-  }, [room?.id, user?.id]);
+  }, [room?.id, user?.id, debugLog]);
 
-  // Timer management
+  // Timer management - FIXED: Only current player triggers rotation
   useEffect(() => {
-    if (!room?.turn_end_time) {
+    // Clear any existing timer
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+
+    // Only run timer during playing state
+    if (!room?.turn_end_time || gameState !== 'playing') {
       setTimeRemaining(null);
       return;
     }
 
-    const hasRotatedRef = { current: false };
+    // Determine if it's my turn from current players state
+    const myPlayerData = players.find(p => p.user_id === user?.id);
+    const isMyTurn = myPlayerData?.is_current_turn || false;
+
+    debugLog('Timer Setup', { 
+      isMyTurn, 
+      myUsername: myPlayerData?.username,
+      turnEndTime: room.turn_end_time
+    });
+
+    let hasTriggeredRotation = false;
 
     const updateTimer = () => {
       const endTime = new Date(room.turn_end_time).getTime();
@@ -356,29 +467,43 @@ export default function GameRoom() {
       
       setTimeRemaining(remaining);
 
-      if (remaining === 0 && !hasRotatedRef.current) {
-        hasRotatedRef.current = true;
-        clearInterval(timerRef.current);
+      // CRITICAL FIX: Only the current player triggers rotation when timer expires
+      if (remaining === 0 && !hasTriggeredRotation && isMyTurn && !isRotatingRef.current) {
+        hasTriggeredRotation = true;
         
-        debugLog('Timer', { action: 'time expired, triggering auto-rotation' });
+        debugLog('Timer', { 
+          action: 'time expired, I am the current player, triggering rotation',
+          myUsername: myPlayerData?.username
+        });
         
+        // Clear interval immediately to prevent multiple triggers
+        if (timerRef.current) {
+          clearInterval(timerRef.current);
+          timerRef.current = null;
+        }
+        
+        // Small delay to ensure any final canvas saves complete
         setTimeout(() => {
           handlePassTurn().catch(err => {
             debugLog('Timer', { error: 'Auto-rotation failed', details: err.message });
           });
-        }, 500);
+        }, 100);
       }
     };
 
+    // Run immediately
     updateTimer();
+    
+    // Then run every second
     timerRef.current = setInterval(updateTimer, 1000);
 
     return () => {
       if (timerRef.current) {
         clearInterval(timerRef.current);
+        timerRef.current = null;
       }
     };
-  }, [room?.turn_end_time, handlePassTurn, debugLog]);
+  }, [room?.turn_end_time, gameState, players, user?.id, handlePassTurn, debugLog]);
 
   // Generate topic options
   const generateTopicOptions = useCallback(() => {
@@ -439,7 +564,7 @@ export default function GameRoom() {
   // Topic selection handler
   const handleTopicSelect = async (topic) => {
     try {
-      debugLog('TopicSelect', { topic, playerId: user?.id });
+      debugLog('TopicSelect', { topic, visibleUserId: user?.id?.substring(0, 8) });
       
       if (room?.host_id !== user?.id) {
         throw new Error('Only the host can select the topic');
@@ -449,6 +574,20 @@ export default function GameRoom() {
 
       const turnEndTime = new Date(Date.now() + 60000).toISOString();
 
+      // First, reset all players to not current turn
+      await supabase
+        .from('pass_the_brush_players')
+        .update({ is_current_turn: false })
+        .eq('room_id', room.id);
+
+      // Then set the first player (turn_order = 1) as current
+      await supabase
+        .from('pass_the_brush_players')
+        .update({ is_current_turn: true })
+        .eq('room_id', room.id)
+        .eq('turn_order', 1);
+
+      // Finally update the room state
       await supabase
         .from('pass_the_brush_rooms')
         .update({
@@ -456,16 +595,11 @@ export default function GameRoom() {
           status: 'playing',
           current_topic: topic,
           topic: topic,
+          current_turn: 1,
           turn_end_time: turnEndTime,
           updated_at: new Date().toISOString()
         })
         .eq('id', room.id);
-
-      await supabase
-        .from('pass_the_brush_players')
-        .update({ is_current_turn: true })
-        .eq('room_id', room.id)
-        .eq('turn_order', 1);
 
       debugLog('TopicSelect', { 
         action: 'completed', 
@@ -487,7 +621,7 @@ export default function GameRoom() {
     if (!newMessage.trim()) return;
 
     try {
-      debugLog('SendMessage', { message: newMessage.substring(0, 50), roomId: room?.id });
+      debugLog('SendMessage', { messagePreview: newMessage.substring(0, 50), roomId: room?.id });
 
       const player = players.find(p => p.user_id === user?.id);
       if (!player) {
@@ -577,6 +711,7 @@ export default function GameRoom() {
   const isHost = room?.host_id === user?.id;
   const currentPlayerData = players.find(p => p.user_id === user?.id);
   const isMyTurn = currentPlayerData?.is_current_turn || false;
+  const activeDrawer = players.find(p => p.is_current_turn);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -593,7 +728,9 @@ export default function GameRoom() {
                 <div className="text-right">
                   <p className="text-sm text-gray-600">Turn {currentTurn} of {maxTurns}</p>
                   {timeRemaining !== null && (
-                    <p className="text-lg font-bold text-blue-600">{timeRemaining}s</p>
+                    <p className={`text-lg font-bold ${timeRemaining <= 10 ? 'text-red-600' : 'text-blue-600'}`}>
+                      {timeRemaining}s
+                    </p>
                   )}
                 </div>
               )}
@@ -666,8 +803,8 @@ export default function GameRoom() {
                   <div className="flex justify-between items-center mb-4">
                     <div>
                       <h3 className="text-xl font-bold text-gray-900">Topic: {room?.current_topic || room?.topic}</h3>
-                      <p className="text-sm text-gray-600">
-                        {isMyTurn ? "It's your turn!" : `${currentPlayer?.username}'s turn`}
+                      <p className={`text-sm ${isMyTurn ? 'text-green-600 font-semibold' : 'text-gray-600'}`}>
+                        {isMyTurn ? "🎨 It's your turn to draw!" : `Watching ${activeDrawer?.username || 'player'} draw...`}
                       </p>
                     </div>
                   </div>
@@ -683,8 +820,14 @@ export default function GameRoom() {
             {/* Voting State */}
             {gameState === 'voting' && (
               <div className="bg-white rounded-lg shadow-md p-8 text-center">
-                <h2 className="text-3xl font-bold text-gray-900 mb-4">Game Complete!</h2>
-                <p className="text-gray-600 mb-6">Voting feature coming soon...</p>
+                <h2 className="text-3xl font-bold text-gray-900 mb-4">🎉 Game Complete!</h2>
+                <p className="text-gray-600 mb-6">Great drawing everyone! Voting feature coming soon...</p>
+                <button
+                  onClick={handleLeaveRoom}
+                  className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                  Return to Lobby
+                </button>
               </div>
             )}
           </div>
@@ -698,10 +841,10 @@ export default function GameRoom() {
                 {players.map((player) => (
                   <div
                     key={player.id}
-                    className={`p-3 rounded-lg ${
+                    className={`p-3 rounded-lg transition-all ${
                       player.is_current_turn
                         ? 'bg-blue-100 border-2 border-blue-500'
-                        : 'bg-gray-50'
+                        : 'bg-gray-50 border-2 border-transparent'
                     }`}
                   >
                     <div className="flex items-center justify-between">
@@ -715,7 +858,9 @@ export default function GameRoom() {
                         )}
                       </div>
                       {player.is_current_turn && (
-                        <span className="text-xs font-semibold text-blue-600">Drawing...</span>
+                        <span className="text-xs font-semibold text-blue-600 animate-pulse">
+                          🖌️ Drawing...
+                        </span>
                       )}
                     </div>
                   </div>
@@ -727,12 +872,16 @@ export default function GameRoom() {
             <div className="bg-white rounded-lg shadow-md p-6 flex flex-col h-96">
               <h3 className="text-lg font-bold text-gray-900 mb-4">Chat</h3>
               <div className="flex-1 overflow-y-auto space-y-2 mb-4">
-                {messages.map((msg) => (
-                  <div key={msg.id} className="text-sm">
-                    <span className="font-semibold text-gray-900">{msg.username}:</span>{' '}
-                    <span className="text-gray-700">{msg.message}</span>
-                  </div>
-                ))}
+                {messages.length === 0 ? (
+                  <p className="text-gray-400 text-sm text-center">No messages yet...</p>
+                ) : (
+                  messages.map((msg) => (
+                    <div key={msg.id} className="text-sm">
+                      <span className="font-semibold text-gray-900">{msg.username}:</span>{' '}
+                      <span className="text-gray-700">{msg.message}</span>
+                    </div>
+                  ))
+                )}
               </div>
               <form onSubmit={handleSendMessage} className="flex gap-2">
                 <input
